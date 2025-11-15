@@ -65,6 +65,7 @@ var defaultValueMap = map[string]string{
 	"subURI":        "",
 	"subJsonExt":    "",
 	"subClashExt":   "",
+	"subscriptionDomain": "", // Added for custom subscription domain
 	"config":        defaultConfig,
 	"version":       config.GetVersion(),
 }
@@ -99,6 +100,7 @@ func (s *SettingService) GetAllSetting() (*map[string]string, error) {
 	delete(allSetting, "secret")
 	delete(allSetting, "config")
 	delete(allSetting, "version")
+	// Do not delete subscriptionDomain from here, it's meant to be exposed
 
 	return &allSetting, nil
 }
@@ -180,7 +182,20 @@ func (s *SettingService) GetListen() (string, error) {
 }
 
 func (s *SettingService) GetWebDomain() (string, error) {
+	// Prioritize subscriptionDomain if set
+	subDomain, err := s.getString("subscriptionDomain")
+	if err != nil && !database.IsNotFound(err) {
+		return "", err
+	}
+	if subDomain != "" {
+		return subDomain, nil
+	}
+	// Fallback to webDomain
 	return s.getString("webDomain")
+}
+
+func (s *SettingService) SetSubscriptionDomain(domain string) error {
+	return s.setString("subscriptionDomain", domain)
 }
 
 func (s *SettingService) GetPort() (int, error) {

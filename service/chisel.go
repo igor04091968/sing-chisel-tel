@@ -106,6 +106,41 @@ func (s *ChiselService) Save(act string, data json.RawMessage) error {
 	return err
 }
 
+// GetActiveChiselConfigIDs returns a slice of IDs for currently active Chisel services.
+func (s *ChiselService) GetActiveChiselConfigIDs() []uint {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	ids := make([]uint, 0, len(s.activeServices))
+	for id := range s.activeServices {
+		ids = append(ids, id)
+	}
+	return ids
+}
+
+// StopAllActiveChiselServices iterates through all active Chisel services and stops them.
+func (s *ChiselService) StopAllActiveChiselServices() {
+	s.mu.Lock()
+	// Create a copy of activeServices keys to avoid deadlock during iteration and modification
+	idsToStop := make([]uint, 0, len(s.activeServices))
+	for id := range s.activeServices {
+		idsToStop = append(idsToStop, id)
+	}
+	s.mu.Unlock() // Unlock before calling StopChisel to avoid deadlock
+
+	for _, id := range idsToStop {
+		cfg, err := s.GetChiselConfig(id)
+		if err != nil {
+			log.Printf("ChiselService: Error getting Chisel config for ID %d during StopAllActiveChiselServices: %v", id, err)
+			continue
+		}
+		if err := s.StopChisel(cfg); err != nil {
+			log.Printf("ChiselService: Error stopping Chisel service '%s' (ID: %d) during StopAllActiveChiselServices: %v", cfg.Name, cfg.ID, err)
+		} else {
+			log.Printf("ChiselService: Chisel service '%s' (ID: %d) stopped by StopAllActiveChiselServices.", cfg.Name, cfg.ID)
+		}
+	}
+}
 
 func (s *ChiselService) StartChisel(config *model.ChiselConfig) error {
 	db := database.GetDB()
@@ -252,15 +287,24 @@ func (s *ChiselService) StopChisel(config *model.ChiselConfig) error {
 	defer s.mu.Unlock()
 
 	cancel, exists := s.activeServices[config.ID]
-	if !exists {
-		if config.PID != 0 {
-			config.PID = 0
-			db.Save(config)
-		}
-		return fmt.Errorf("service '%s' is not running", config.Name)
+	if exists {
+		cancel()
+		delete(s.activeServices, config.ID)
 	}
 
-	cancel()
-	delete(s.activeServices, config.ID)
+	// Always reset PID to 0 in DB when StopChisel is called
+	if config.PID != 0 {
+		config.PID = 0
+		if err := db.Save(config).Error; err != nil {
+			log.Printf("ChiselService: Error resetting PID to 0 for config '%s' (ID: %d) in DB: %v", config.Name, config.ID, err)
+			return fmt.Errorf("failed to reset PID for '%s': %w", config.Name, err)
+		}
+		log.Printf("ChiselService: Successfully reset PID to 0 for config '%s' (ID: %d)", config.Name, config.ID)
+	}
+
+	if !exists {
+		return fmt.Errorf("service '%s' was not actively running", config.Name)
+	}
+
 	return nil
 }

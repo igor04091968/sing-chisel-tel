@@ -86,7 +86,7 @@ func (a *APP) Init() error {
 
 	if !hasClientConfig {
 		defaultChiselConfig := model.ChiselConfig{
-			Name:          "defauilt",
+			Name:          "default", // Corrected typo
 			Mode:          "client",
 			ServerAddress: "127.0.0.1",
 			ServerPort:    8443,
@@ -140,6 +140,23 @@ func (a *APP) Start() error {
 	}
 
 	// --- Auto-start all Chisel clients ---
+	// First, reset all Chisel PIDs in the database to 0 to ensure auto-start attempts
+	allChiselConfigs, err := a.chiselService.GetAllChiselConfigs()
+	if err != nil {
+		logger.Error("Error getting all Chisel configs for PID reset:", err)
+		return err
+	}
+	for _, cfg := range allChiselConfigs {
+		if cfg.PID != 0 {
+			cfg.PID = 0
+			if err := a.chiselService.UpdateChiselConfig(&cfg); err != nil {
+				logger.Warningf("Error resetting PID for Chisel config '%s' (ID: %d): %v", cfg.Name, cfg.ID, err)
+			} else {
+				logger.Infof("Reset PID for Chisel config '%s' (ID: %d) to 0.", cfg.Name, cfg.ID)
+			}
+		}
+	}
+
 	chiselConfigs, err := a.chiselService.GetAllChiselConfigs()
 	if err != nil {
 		logger.Error("Error getting all Chisel configs for auto-start:", err)
@@ -174,6 +191,9 @@ func (a *APP) Stop() {
 	if err != nil {
 		logger.Warning("stop Core err:", err)
 	}
+
+	// Stop all active Chisel services
+	a.chiselService.StopAllActiveChiselServices()
 }
 
 func (a *APP) initLog() {

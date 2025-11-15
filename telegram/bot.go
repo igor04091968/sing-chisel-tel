@@ -136,6 +136,9 @@ func handleCommand(ctx context.Context, b *bot.Bot, message *models.Message) {
 				"/remove_chisel <name>\n" +
 				"/start_chisel <name>\n" +
 				"/stop_chisel <name>\n\n" +
+				"Subscription Domain Commands:\n" +
+				"/set_sub_domain <domain>\n" +
+				"/get_sub_domain\n\n" +
 				"MTProto Proxy Commands:\n" +
 				"/add_mtproto <name> <port> <secret> [ad_tag]\n" +
 				"/list_mtproto\n" +
@@ -195,6 +198,11 @@ func handleCommand(ctx context.Context, b *bot.Bot, message *models.Message) {
 		handleListInbounds(ctx, b, message)
 	case "/list_outbounds":
 		handleListOutbounds(ctx, b, message)
+	// Subscription Domain Commands
+	case "/set_sub_domain":
+		handleSetSubDomain(ctx, b, message, args)
+	case "/get_sub_domain":
+		handleGetSubDomain(ctx, b, message)
 	// MTProto Proxy Commands
 	case "/add_mtproto":
 		handleAddMTProto(ctx, b, message, args)
@@ -1335,5 +1343,36 @@ func handleStopTap(ctx context.Context, b *bot.Bot, message *models.Message, arg
 	}
 
 	b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: fmt.Sprintf("TAP Tunnel '%s' stopped successfully.", name)})
+}
+
+// Subscription Domain Handlers
+func handleSetSubDomain(ctx context.Context, b *bot.Bot, message *models.Message, args []string) {
+	if len(args) != 1 {
+		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: "Usage: /set_sub_domain <domain>"})
+		return
+	}
+	domain := args[0]
+	settingService := services.GetConfigService().SettingService // Access SettingService via ConfigService
+	if err := settingService.SetSubscriptionDomain(domain); err != nil {
+		log.Printf("Error setting subscription domain: %v", err)
+		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: fmt.Sprintf("Error setting subscription domain: %v", err)})
+		return
+	}
+	b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: fmt.Sprintf("Subscription domain set to: %s", domain)})
+}
+
+func handleGetSubDomain(ctx context.Context, b *bot.Bot, message *models.Message) {
+	settingService := services.GetConfigService().SettingService // Access SettingService via ConfigService
+	domain, err := settingService.GetWebDomain() // GetWebDomain now prioritizes subscriptionDomain
+	if err != nil {
+		log.Printf("Error getting subscription domain: %v", err)
+		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: fmt.Sprintf("Error getting subscription domain: %v", err)})
+		return
+	}
+	if domain == "" {
+		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: "Subscription domain is not set. Using default web domain."})
+	} else {
+		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: fmt.Sprintf("Current subscription domain: %s", domain)})
+	}
 }
 
