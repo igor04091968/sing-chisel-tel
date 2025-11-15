@@ -85,6 +85,9 @@ func InitDB(dbPath string) error {
 		&model.ChiselConfig{},
 		&model.Service{},
 		&model.Tokens{},
+		&model.GreTunnel{},
+		&model.TapTunnel{},
+		&model.MTProtoProxyConfig{},
 	)
 	if err != nil {
 		return err

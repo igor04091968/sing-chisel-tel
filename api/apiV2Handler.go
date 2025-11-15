@@ -19,10 +19,17 @@ type TokenInMemory struct {
 type APIv2Handler struct {
 	ApiService
 	tokens *[]TokenInMemory
+	greAPI *GreAPI
+	tapAPI *TapAPI
+	mtprotoAPI *MTProtoAPI // Add this line
 }
 
 func NewAPIv2Handler(g *gin.RouterGroup) *APIv2Handler {
-	a := &APIv2Handler{}
+	a := &APIv2Handler{
+		greAPI: NewGreAPI(),
+		tapAPI: NewTapAPI(),
+		mtprotoAPI: NewMTProtoAPI(), // Add this line
+	}
 	a.ReloadTokens()
 	a.initRouter(g)
 	return a
@@ -45,6 +52,10 @@ func (a *APIv2Handler) initRouter(g *gin.RouterGroup) {
 		chiselGroup.POST("/:id/start", a.startChisel)
 		chiselGroup.POST("/:id/stop", a.stopChisel)
 	}
+
+	a.greAPI.RegisterRoutes(g)
+	a.tapAPI.RegisterRoutes(g)
+	a.mtprotoAPI.RegisterRoutes(g) // Add this line
 }
 
 func (a *APIv2Handler) postHandler(c *gin.Context) {

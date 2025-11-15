@@ -218,4 +218,101 @@ The application startup process has been improved to handle database migrations 
 
 *   **SNI Support:** To further improve TLS compatibility, especially with servers hosting multiple domains, the `ServerName` field in the `chclient.TLSConfig` is now set to the Chisel server's address. This ensures the correct certificate is presented during the TLS handshake.
 
+## 9. GRE Tunneling
 
+The `s-ui` application now supports Generic Routing Encapsulation (GRE) tunneling, allowing for the creation and management of GRE tunnel interfaces directly from the application's API.
+
+### 9.1. Core Architecture
+
+-   **Kernel-Level Integration:** GRE tunnels are created and managed by interacting with the Linux kernel's networking stack via the `vishvananda/netlink` Go library.
+-   **Database-Driven Configuration:** GRE tunnel configurations are stored in the `s-ui` SQLite database (`gre_tunnels` table).
+-   **Centralized Control:** The `service.GreService` manages the lifecycle of GRE tunnel interfaces.
+-   **Privilege Requirement:** Creating and configuring GRE tunnel interfaces requires `CAP_NET_ADMIN` privileges. Therefore, the `s-ui` application must be run with `root` privileges for this functionality to work.
+
+### 9.2. Network Capabilities
+
+-   **Interface Creation:** Dynamically create virtual GRE tunnel interfaces.
+-   **IP Configuration:** Assign local and remote IP addresses to the GRE tunnel.
+-   **Status Management:** Bring the tunnel interface up or down.
+
+### 9.3. How It Works: From API to Tunnel
+
+1.  **User Action:** A user creates a GRE tunnel configuration via the API.
+2.  **API Call:** The frontend sends a request to `POST /api/v2/gre`.
+3.  **Service Layer:** The `api.GreAPI` calls `service.GreService.CreateGreTunnel`.
+4.  **Database Interaction:** The configuration is saved to the database.
+5.  **Netlink Interaction:** `service.GreService` uses `netlink` to:
+    a.  Add the GRE tunnel interface (`netlink.LinkAdd`).
+    b.  Assign an IP address (`netlink.AddrAdd`).
+    c.  Bring the interface up (`netlink.LinkSetUp`).
+6.  **Tunnel Established:** The GRE tunnel interface is created and configured in the operating system.
+
+## 10. TAP Tunneling
+
+The `s-ui` application now supports TAP tunneling, allowing for the creation and management of virtual TAP network interfaces.
+
+### 10.1. Core Architecture
+
+-   **User-Space Device Creation:** TAP devices are created using the `songgao/water` Go library, which interacts with `/dev/net/tun` (or equivalent).
+-   **Kernel-Level Configuration:** After creation, the TAP device is configured (assigning IP, MTU, bringing up) by interacting with the Linux kernel's networking stack via the `vishvananda/netlink` Go library.
+-   **Database-Driven Configuration:** TAP tunnel configurations are stored in the `s-ui` SQLite database (`tap_tunnels` table).
+-   **Centralized Control:** The `service.TapService` manages the lifecycle of TAP interfaces.
+-   **Privilege Requirement:** While creating the TAP device itself might not always require `root` (depending on `/dev/net/tun` permissions), its full configuration (IP address, MTU, bringing up) requires `CAP_NET_ADMIN` privileges. Therefore, the `s-ui` application must be run with `root` privileges for this functionality to work.
+
+### 10.2. Network Capabilities
+
+-   **Interface Creation:** Dynamically create virtual TAP interfaces.
+-   **IP Configuration:** Assign IP addresses to the TAP interface.
+-   **MTU Configuration:** Set the Maximum Transmission Unit for the TAP interface.
+-   **Status Management:** Bring the TAP interface up or down.
+-   **Raw Ethernet Frame Access:** Once created and configured, the TAP interface allows `s-ui` (or another user-space program) to read and write raw Ethernet frames.
+
+### 10.3. How It Works: From API to Interface
+
+1.  **User Action:** A user creates a TAP tunnel configuration via the API.
+2.  **API Call:** The frontend sends a request to `POST /api/v2/tap`.
+3.  **Service Layer:** The `api.TapAPI` calls `service.TapService.CreateTapTunnel`.
+4.  **Database Interaction:** The configuration is saved to the database.
+5.  **Water/Netlink Interaction:** `service.TapService` uses `songgao/water` to create the TAP device and then `netlink` to:
+    a.  Get the netlink link for the created device.
+    b.  Set the MTU (`netlink.LinkSetMTU`).
+    c.  Assign an IP address (`netlink.AddrAdd`).
+    d.  Bring the interface up (`netlink.LinkSetUp`).
+6.  **TAP Interface Established:** The TAP interface is created and configured in the operating system.
+
+## 11. MTProto Proxy
+
+The `s-ui` application now supports managing MTProto Proxies for Telegram, allowing users to bypass censorship and access the messaging service. This is implemented by controlling an external `mtg` binary.
+
+### 11.1. Core Architecture
+
+-   **External Process Management:** The `s-ui` application manages the `mtg` (MTProto Proxy) binary as an external process using Go's `os/exec` package.
+-   **Database-Driven Configuration:** MTProto Proxy configurations are stored in the `s-ui` SQLite database (`mtproto_proxy_configs` table).
+-   **Centralized Control:** The `service.MTProtoService` manages the lifecycle of `mtg` processes (start, stop).
+-   **Privilege Requirement:** While `mtg` itself might not require `root` to run (depending on the listen port), `s-ui`'s ability to manage external processes and potentially bind to privileged ports (like 443) might necessitate running `s-ui` with elevated privileges or proper `setcap` configuration for the `sui` binary.
+
+### 11.2. Network Capabilities
+
+-   **MTProto Protocol Support:** Provides a proxy for Telegram's proprietary MTProto protocol.
+-   **Censorship Circumvention:** Designed to bypass network restrictions and DPI by mimicking legitimate Telegram traffic.
+-   **Obfuscation:** Supports MTProto's built-in obfuscation mechanisms.
+-   **Configurable Secret:** Allows setting a unique secret for each proxy instance.
+-   **AdTag Support:** Supports optional `AdTag` for promoting Telegram channels.
+
+### 11.3. How It Works: From API to Proxy
+
+1.  **User Action:** A user creates or starts an MTProto Proxy configuration via the API.
+2.  **API Call:** The frontend sends a request to `POST /api/v2/mtproto` or `POST /api/v2/mtproto/:id/start`.
+3.  **Service Layer:** The `api.MTProtoAPI` calls `service.MTProtoService.StartMTProtoProxy`.
+4.  **Database Interaction:** The configuration is saved to the database.
+5.  **External Process Launch:** `service.MTProtoService` constructs command-line arguments (e.g., `--bind-to`, `--secret`, `--ad-tag`) and launches the `mtg` binary using `os/exec.CommandContext`.
+6.  **Proxy Running:** The `mtg` binary starts listening on the specified port, handling MTProto traffic. `s-ui` monitors its lifecycle and updates its status in the database.
+
+## 12. Privilege Requirements
+
+For the full functionality of GRE, TAP, and MTProto Proxy management, the `s-ui` application requires elevated privileges.
+
+-   **GRE and TAP Tunneling:** Creating and configuring kernel-level network interfaces (GRE) and fully configuring TAP interfaces (assigning IP, MTU, bringing up) requires `CAP_NET_ADMIN` capability.
+-   **MTProto Proxy (External Process):** While the `mtg` binary itself might not always need `root` (e.g., if listening on a non-privileged port > 1024), `s-ui`'s ability to manage external processes and potentially bind `mtg` to privileged ports (like 443) might necessitate running `s-ui` with elevated privileges or proper `setcap` configuration for the `sui` binary.
+
+**Recommendation:** It is recommended to run the `sui` executable with `root` privileges or configure appropriate Linux capabilities (e.g., `sudo setcap cap_net_admin,cap_net_bind_service=+ep /path/to/sui`) if fine-grained control is desired.
