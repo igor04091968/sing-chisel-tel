@@ -32,6 +32,27 @@ This guide provides step-by-step instructions for an AI agent to build the S-UI 
             # ...
             ```
         *   **Re-commit and Re-push:** After modification, commit the change and push to GitHub.
+    *   **Troubleshooting (Frontend Build Errors - TypeScript)**: If the frontend build fails with TypeScript errors after modifying frontend components or types (e.g., `Property 'mode' is missing`, `Type 'number | undefined' is not assignable to type 'number'`, `Cannot find name 'CHISEL'`).
+        *   **Action 1 (Optional `listen_port`):** Ensure `listen_port` is optional in `frontend/src/types/inbounds.ts` if it's not always required.
+            ```typescript
+            // In frontend/src/types/inbounds.ts
+            export interface Listen {
+              listen: string
+              listen_port?: number // Changed from 'listen_port: number'
+              // ...
+            }
+            ```
+        *   **Action 2 (Undefined check):** Add null/undefined checks for optional properties before accessing them.
+            ```typescript
+            // Example in frontend/src/layouts/modals/Inbound.vue
+            // if (this.inbound.listen_port > 65535 || this.inbound.listen_port < 1) return false
+            if (this.inbound.listen_port === undefined || this.inbound.listen_port > 65535 || this.inbound.listen_port < 1) return false
+            ```
+        *   **Action 3 (Import Types):** Ensure all necessary types (e.g., `CHISEL`) are imported into the script section of Vue components where they are used for type casting or type inference.
+            ```typescript
+            // Example in frontend/src/layouts/modals/Service.vue
+            import { SrvTypes, createSrv, CHISEL } from '@/types/services' // Add CHISEL here
+            ```
 
 ## 3. Git Repository Setup and Push
 
