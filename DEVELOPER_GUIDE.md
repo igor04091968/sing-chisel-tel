@@ -212,6 +212,10 @@ The application startup process has been improved to handle database migrations 
 
 *   **API Service Initialization:** A major architectural flaw was discovered where the `api.ApiService` struct was not being initialized, leading to a `nil` pointer panic when its methods were called. This was the root cause of the `500 Internal Server Error` on all API endpoints. The issue was resolved by refactoring the `service.ChiselService` to be stateless (similar to `service.SettingService`), removing its dependency on an initialized `db` field and instead using the global `database.GetDB()` getter. This is a pragmatic fix to prevent the panic, though a more thorough dependency injection refactor could be considered in the future.
 
-*   **JSON Field Mapping:** A bug was fixed where saving Chisel configurations from the web UI would fail to populate the database correctly. This was due to a case mismatch between the frontend's `snake_case` JSON properties and the backend's `PascalCase` struct fields. The `model.ChiselConfig` struct in `database/model/chisel.go` was updated with the correct `json` tags to ensure proper mapping.
+### 7.5 Chisel TLS Connection
+
+*   **WebSocket Handshake Error:** A `websocket: bad handshake` error was occurring when connecting to a Chisel server with TLS enabled. Server-side logs revealed the root cause: `client sent an HTTP request to an HTTPS server`. This was happening because the client was connecting using the `ws://` protocol instead of the secure `wss://` protocol. The fix was to prepend `https://` to the server address in `service/chisel.go` when TLS is enabled, which correctly sets the WebSocket scheme to `wss://`.
+
+*   **SNI Support:** To further improve TLS compatibility, especially with servers hosting multiple domains, the `ServerName` field in the `chclient.TLSConfig` is now set to the Chisel server's address. This ensures the correct certificate is presented during the TLS handshake.
 
 

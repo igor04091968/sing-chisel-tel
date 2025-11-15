@@ -159,14 +159,20 @@ func (s *ChiselService) StartChisel(config *model.ChiselConfig) error {
 				}
 			}
 
+			serverURL := fmt.Sprintf("%s:%d", config.ServerAddress, config.ServerPort)
+			if skipVerify { // A bit of a hack, but if we're skipping verify, we're probably using TLS
+				serverURL = "https://" + serverURL
+			}
+
 			clientConfig := &chclient.Config{
 				Remotes:   remotes,
 				Auth:      auth,
-				Server:    fmt.Sprintf("%s:%d", config.ServerAddress, config.ServerPort),
+				Server:    serverURL,
 				KeepAlive: 25 * time.Second,
 				Headers:   http.Header{},
 				TLS: chclient.TLSConfig{
 					SkipVerify: skipVerify,
+					ServerName: config.ServerAddress,
 				},
 			}
 
