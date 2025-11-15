@@ -87,6 +87,10 @@ func (a *ApiService) getData(c *gin.Context) (interface{}, error) {
 		if err != nil {
 			return "", err
 		}
+		chiselConfigs, err := a.ChiselService.GetAllChiselConfigs()
+		if err != nil {
+			return "", err
+		}
 		subURI, err := a.SettingService.GetFinalSubURI(getHostname(c))
 		if err != nil {
 			return "", err
@@ -102,6 +106,7 @@ func (a *ApiService) getData(c *gin.Context) (interface{}, error) {
 		data["outbounds"] = outbounds
 		data["endpoints"] = endpoints
 		data["services"] = services
+		data["chisel"] = chiselConfigs
 		data["subURI"] = subURI
 		data["enableTraffic"] = trafficAge > 0
 		data["onlines"] = onlines
@@ -142,6 +147,12 @@ func (a *ApiService) LoadPartialData(c *gin.Context, objs []string) error {
 				return err
 			}
 			data[obj] = services
+		case "chisel":
+			chiselConfigs, err := a.ChiselService.GetAllChiselConfigs()
+			if err != nil {
+				return err
+			}
+			data[obj] = chiselConfigs
 		case "tls":
 			tlsConfigs, err := a.TlsService.GetAll()
 			if err != nil {

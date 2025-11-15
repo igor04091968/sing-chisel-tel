@@ -12,7 +12,7 @@
   />
   <v-row>
     <v-col cols="12" justify="center" align="center">
-      <v-btn color="primary" @click="showModal(0)">{{ $t('actions.add') }}</v-btn>
+      <v-btn color="primary" @click="showModal(null)">{{ $t('actions.add') }}</v-btn>
     </v-col>
   </v-row>
   <v-row>
@@ -45,7 +45,7 @@
         </v-card-text>
         <v-divider></v-divider>
         <v-card-actions style="padding: 0;">
-          <v-btn icon="mdi-file-edit" @click="showModal(item.id)">
+          <v-btn icon="mdi-file-edit" @click="showModal(item)">
             <v-icon />
             <v-tooltip activator="parent" location="top" :text="$t('actions.edit')"></v-tooltip>
           </v-btn>
@@ -62,7 +62,7 @@
               <v-divider></v-divider>
               <v-card-text>{{ $t('confirm') }}</v-card-text>
               <v-card-actions>
-                <v-btn color="error" variant="outlined" @click="delSrv(item.id)">{{ $t('yes') }}</v-btn>
+                <v-btn color="error" variant="outlined" @click="delSrv(item, index)">{{ $t('yes') }}</v-btn>
                 <v-btn color="success" variant="outlined" @click="delOverlay[index] = false">{{ $t('no') }}</v-btn>
               </v-card-actions>
             </v-card>
@@ -79,8 +79,23 @@ import { Srv } from '@/types/services'
 import { computed, ref } from 'vue'
 import ServiceVue from '@/layouts/modals/Service.vue'
 
-const services = computed((): Srv[] => {
-  return <Srv[]> Data().services
+const services = computed(() => {
+  const data = Data()
+  const genericServices = (data.services as any[]).map(s => ({...s, _objectType: 'services'}))
+  const mappedChisel = (data.chisel as any[]).map(c => {
+    const isServer = c.Mode === 'server';
+    return {
+      id: c.ID,
+      tag: c.Name,
+      type: `chisel-${c.Mode}`,
+      listen: isServer ? c.ListenAddress : c.ServerAddress,
+      listen_port: isServer ? c.ListenPort : c.ServerPort,
+      tls_id: (c.Args as string).includes('--tls') ? 1 : 0, // Best effort to show TLS status
+      _objectType: 'chisel',
+      _original: c,
+    }
+  })
+  return genericServices.concat(mappedChisel)
 })
 
 const srvTags = computed((): any[] => {
@@ -111,21 +126,31 @@ const modal = ref({
 
 let delOverlay = ref(new Array<boolean>)
 
-const showModal = (id: number) => {
-  modal.value.id = id
-  modal.value.data = id == 0 ? '' : JSON.stringify(services.value.findLast(o => o.id == id))
-  modal.value.visible = true
+const showModal = (item: any) => {
+  const id = item?.id ?? 0;
+  modal.value.id = id;
+  let dataObject = null;
+  if (item) {
+    if (item._objectType === 'chisel') {
+      dataObject = item._original;
+    } else {
+      // Find the original service object from the store
+      dataObject = Data().services.find(s => s.id === id);
+    }
+  }
+  modal.value.data = id === 0 ? '' : JSON.stringify(dataObject);
+  modal.value.visible = true;
 }
 
 const closeModal = () => {
   modal.value.visible = false
 }
 
-const delSrv = async (id: number) => {
-  const index = services.value.findIndex(i => i.id == id)
-  const tag = services.value[index].tag
-
-  const success = await Data().save("services", "del", tag)
+const delSrv = async (item: any, index: number) => {
+  const objectType = item._objectType;
+  // For 'services', the delete payload is the tag. For 'chisel', it's the ID.
+  const payload = objectType === 'chisel' ? item.id : item.tag;
+  const success = await Data().save(objectType, "del", payload)
   if (success) delOverlay.value[index] = false
 }
 </script>

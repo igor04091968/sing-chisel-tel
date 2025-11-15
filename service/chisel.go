@@ -10,56 +10,61 @@ import (
 	"sync"
 	"time"
 
+	"github.com/alireza0/s-ui/database"
 	"github.com/alireza0/s-ui/database/model"
 	chclient "github.com/jpillora/chisel/client"
 	chserver "github.com/jpillora/chisel/server"
-	"gorm.io/gorm"
 )
 
 type ChiselService struct {
-	db             *gorm.DB
 	activeServices map[uint]context.CancelFunc
 	mu             sync.Mutex
 }
 
-func NewChiselService(db *gorm.DB) *ChiselService {
+func NewChiselService() *ChiselService {
 	return &ChiselService{
-		db:             db,
 		activeServices: make(map[uint]context.CancelFunc),
 	}
 }
 
 func (s *ChiselService) GetAllChiselConfigs() ([]model.ChiselConfig, error) {
+	db := database.GetDB()
 	var configs []model.ChiselConfig
-	err := s.db.Find(&configs).Error
+	err := db.Find(&configs).Error
 	return configs, err
 }
 
 func (s *ChiselService) GetChiselConfig(id uint) (*model.ChiselConfig, error) {
+	db := database.GetDB()
 	var config model.ChiselConfig
-	err := s.db.First(&config, id).Error
+	err := db.First(&config, id).Error
 	return &config, err
 }
 
 func (s *ChiselService) GetChiselConfigByName(name string) (*model.ChiselConfig, error) {
+	db := database.GetDB()
 	var config model.ChiselConfig
-	err := s.db.Where("name = ?", name).First(&config).Error
+	err := db.Where("name = ?", name).First(&config).Error
 	return &config, err
 }
 
 func (s *ChiselService) CreateChiselConfig(config *model.ChiselConfig) error {
-	return s.db.Create(config).Error
+	db := database.GetDB()
+	return db.Create(config).Error
 }
 
 func (s *ChiselService) UpdateChiselConfig(config *model.ChiselConfig) error {
-	return s.db.Save(config).Error
+	db := database.GetDB()
+	return db.Save(config).Error
 }
 
 func (s *ChiselService) DeleteChiselConfig(id uint) error {
-	return s.db.Delete(&model.ChiselConfig{}, id).Error
+	db := database.GetDB()
+	return db.Delete(&model.ChiselConfig{}, id).Error
 }
 
-func (s *ChiselService) Save(tx *gorm.DB, act string, data json.RawMessage) error {
+func (s *ChiselService) Save(act string, data json.RawMessage) error {
+	db := database.GetDB()
 	var err error
 	switch act {
 	case "new", "update":
@@ -69,9 +74,9 @@ func (s *ChiselService) Save(tx *gorm.DB, act string, data json.RawMessage) erro
 			return err
 		}
 		if act == "new" {
-			err = tx.Create(&config).Error
+			err = db.Create(&config).Error
 		} else {
-			err = tx.Save(&config).Error
+			err = db.Save(&config).Error
 		}
 	case "del":
 		var id uint
@@ -80,7 +85,7 @@ func (s *ChiselService) Save(tx *gorm.DB, act string, data json.RawMessage) erro
 			return err
 		}
 		var config model.ChiselConfig
-		err = tx.First(&config, id).Error
+		err = db.First(&config, id).Error
 		if err != nil {
 			return err
 		}
@@ -93,7 +98,7 @@ func (s *ChiselService) Save(tx *gorm.DB, act string, data json.RawMessage) erro
 			delete(s.activeServices, config.ID)
 			s.mu.Unlock()
 		}
-		err = tx.Delete(&model.ChiselConfig{}, id).Error
+		err = db.Delete(&model.ChiselConfig{}, id).Error
 
 	default:
 		return fmt.Errorf("unknown action: %s", act)
@@ -103,6 +108,7 @@ func (s *ChiselService) Save(tx *gorm.DB, act string, data json.RawMessage) erro
 
 
 func (s *ChiselService) StartChisel(config *model.ChiselConfig) error {
+	db := database.GetDB()
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -120,10 +126,11 @@ func (s *ChiselService) StartChisel(config *model.ChiselConfig) error {
 			s.mu.Unlock()
 
 			var dbConfig model.ChiselConfig
-			if s.db.First(&dbConfig, config.ID).Error == nil {
+			goroutineDB := database.GetDB()
+			if goroutineDB.First(&dbConfig, config.ID).Error == nil {
 				if dbConfig.PID != 0 {
 					dbConfig.PID = 0
-					s.db.Save(&dbConfig)
+					goroutineDB.Save(&dbConfig)
 				}
 			}
 			log.Printf("Chisel service '%s' stopped.", config.Name)
@@ -201,10 +208,11 @@ func (s *ChiselService) StartChisel(config *model.ChiselConfig) error {
 	}()
 
 	config.PID = 1
-	return s.db.Save(config).Error
+	return db.Save(config).Error
 }
 
 func (s *ChiselService) StopChisel(config *model.ChiselConfig) error {
+	db := database.GetDB()
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -212,7 +220,7 @@ func (s *ChiselService) StopChisel(config *model.ChiselConfig) error {
 	if !exists {
 		if config.PID != 0 {
 			config.PID = 0
-			s.db.Save(config)
+			db.Save(config)
 		}
 		return fmt.Errorf("service '%s' is not running", config.Name)
 	}

@@ -168,7 +168,7 @@ func (s *ConfigService) Save(obj string, act string, data json.RawMessage, initU
 	case "endpoints":
 		err = s.EndpointService.Save(tx, act, data)
 	case "chisel":
-		err = s.ChiselService.Save(tx, act, data)
+		err = s.ChiselService.Save(act, data)
 	case "config":
 		err = s.SettingService.SaveConfig(tx, data)
 		if err != nil {

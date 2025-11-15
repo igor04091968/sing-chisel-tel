@@ -171,3 +171,7 @@ This section covers common errors that may occur after the application is built 
 *   **Error: `UNIQUE constraint failed: chisel_configs.name` when adding a service**
     *   **Cause:** This is a user configuration error. The user is trying to create a Chisel configuration with a name that is already in use.
     *   **Solution:** Instruct the user to either choose a different, unique name for the new service or to first delete the existing service with the same name using the `/remove_chisel <name>` command or the web UI.
+
+*   **Error: `Axios error: request failed with status code: 500` on all pages**
+    *   **Cause:** A `nil` pointer panic was occurring in the backend on every API call. This was due to an architectural issue where the `ApiService` was not initialized, causing services like `ChiselService` to have a `nil` database connection.
+    *   **Solution:** The `ChiselService` has been refactored to be stateless and use a global database getter, which resolves the panic. This fix is included in the latest build. If this error occurs, ensure the application is running the most recent build.

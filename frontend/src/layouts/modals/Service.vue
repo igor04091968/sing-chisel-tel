@@ -75,6 +75,10 @@ export default {
     async updateData(id: number) {
       if (id > 0) {
         const newData = JSON.parse(this.$props.data)
+        // Check if it's a chisel config object (which has a 'Mode' property)
+        if (Object.hasOwn(newData, 'Mode')) {
+          newData.type = SrvTypes.CHISEL
+        }
         this.srv = createSrv(newData.type, newData)
         this.title = "edit"
       }
@@ -110,7 +114,7 @@ export default {
       // save data
       this.loading = true
       const objectType = this.srv.type === SrvTypes.CHISEL ? "chisel" : "services";
-      const success = await Data().save(objectType, this.$props.id == 0 ? "new" : "edit", this.srv)
+      const success = await Data().save(objectType, this.$props.id == 0 ? "new" : "update", this.srv)
       if (success) this.closeModal()
       this.loading = false
     },

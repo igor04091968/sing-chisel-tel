@@ -60,7 +60,7 @@ func (a *APP) Init() error {
 	a.webServer = web.NewServer()
 	a.subServer = sub.NewServer()
 
-	a.chiselService = service.NewChiselService(database.GetDB())
+	a.chiselService = service.NewChiselService()
 	a.configService = service.NewConfigService(a.core, a.chiselService)
 
 	// --- Add default Chisel client config if none exists ---

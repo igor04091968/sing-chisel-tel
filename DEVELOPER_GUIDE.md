@@ -208,4 +208,10 @@ The application startup process has been improved to handle database migrations 
 
 *   **/list_chisel Command:** This command was failing silently for some users. The issue was traced to potential Markdown parsing errors in the Telegram API if configuration names or arguments contained special characters. The fix was to remove Markdown formatting from the response in `telegram/bot.go`, ensuring the message is always sent as plain text.
 
+### 7.4 Architectural Fixes
+
+*   **API Service Initialization:** A major architectural flaw was discovered where the `api.ApiService` struct was not being initialized, leading to a `nil` pointer panic when its methods were called. This was the root cause of the `500 Internal Server Error` on all API endpoints. The issue was resolved by refactoring the `service.ChiselService` to be stateless (similar to `service.SettingService`), removing its dependency on an initialized `db` field and instead using the global `database.GetDB()` getter. This is a pragmatic fix to prevent the panic, though a more thorough dependency injection refactor could be considered in the future.
+
+*   **JSON Field Mapping:** A bug was fixed where saving Chisel configurations from the web UI would fail to populate the database correctly. This was due to a case mismatch between the frontend's `snake_case` JSON properties and the backend's `PascalCase` struct fields. The `model.ChiselConfig` struct in `database/model/chisel.go` was updated with the correct `json` tags to ensure proper mapping.
+
 

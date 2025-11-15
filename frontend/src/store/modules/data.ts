@@ -17,6 +17,7 @@ const Data = defineStore('Data', {
     outbounds: <any[]>[],
     services: <any[]>[],
     endpoints: <any[]>[],
+    chisel: <any[]>[],
     clients: <any>[],
     tlsConfigs: <any[]>[],
   }),
@@ -48,6 +49,7 @@ const Data = defineStore('Data', {
       if (Object.hasOwn(data, 'outbounds')) this.outbounds = data.outbounds ?? []
       if (Object.hasOwn(data, 'services')) this.services = data.services ?? []
       if (Object.hasOwn(data, 'endpoints')) this.endpoints = data.endpoints ?? []
+      if (Object.hasOwn(data, 'chisel')) this.chisel = data.chisel ?? []
       if (Object.hasOwn(data, 'tls')) this.tlsConfigs = data.tls ?? []
     },
     async loadInbounds(ids: number[]): Promise<Inbound[]> {
