@@ -5,6 +5,7 @@ export const SrvTypes = {
   DERP: 'derp',
   Resolved: 'resolved',
   SSMAPI: 'ssm-api',
+  CHISEL: 'chisel',
 }
 
 type SrvType = typeof SrvTypes[keyof typeof SrvTypes]
@@ -35,10 +36,20 @@ export interface SSMAPI extends SrvBasics {
   tls?: iTls
 }
 
+export interface CHISEL extends SrvBasics {
+  mode: 'server' | 'client';
+  listen_address?: string; // For server
+  listen_port?: number; // For server
+  server_address?: string; // For client
+  server_port?: number; // For client
+  args?: string; // Extra arguments
+}
+
 type InterfaceMap = {
   derp: DERP
   resolved: Resolved
   'ssm-api': SSMAPI
+  chisel: CHISEL
 }
 
 export type Srv = InterfaceMap[keyof InterfaceMap]
@@ -47,6 +58,7 @@ const defaultValues: Record<SrvType, Srv> = {
   derp: <DERP>{ type: 'derp', config_path: '', tls_id:0 },
   resolved: <Resolved>{ type: 'resolved', listen: '::', listen_port: 53 },
   'ssm-api': <SSMAPI>{ type: 'ssm-api', tls_id: 0, servers: {} },
+  chisel: <CHISEL>{ type: 'chisel', mode: 'server', tag: 'chisel-server', listen_address: '0.0.0.0', listen_port: 8080, args: '' },
 }
 
 export function createSrv<T extends Srv>(type: string, json?: Partial<T>): Srv {

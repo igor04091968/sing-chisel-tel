@@ -24,6 +24,7 @@
         <Listen :data="srv" :inTags="inTags" />
         <Derp v-if="srv.type == srvTypes.DERP" :data="srv" :inTags="inTags" :tsTags="tsTags" />
         <SSMapi v-if="srv.type == srvTypes.SSMAPI" :data="srv" :ssTags="ssTags" />
+        <Chisel v-if="srv.type == srvTypes.CHISEL" :data="srv as CHISEL" />
         <InTLS v-if="HasTls.includes(srv.type)"  :inbound="srv" :tlsConfigs="tlsConfigs" :tls_id="srv.tls_id" />
       </v-card-text>
       <v-card-actions>
@@ -49,12 +50,13 @@
 </template>
 
 <script lang="ts">
-import { SrvTypes, createSrv } from '@/types/services'
+import { SrvTypes, createSrv, CHISEL } from '@/types/services'
 import RandomUtil from '@/plugins/randomUtil'
 import Listen from '@/components/Listen.vue'
 import Derp from '@/components/services/Derp.vue'
 import InTLS from '@/components/tls/InTLS.vue'
 import SSMapi from '@/components/services/SSMAPI.vue'
+import Chisel from '@/components/services/Chisel.vue' // Import Chisel component
 import Data from '@/store/modules/data'
 export default {
   props: ['visible', 'data', 'id', 'inTags', 'tsTags', 'ssTags', 'tlsConfigs'],
@@ -119,6 +121,6 @@ export default {
       }
     },
   },
-  components: { Listen, InTLS, Derp, SSMapi },
+  components: { Listen, InTLS, Derp, SSMapi, Chisel }, // Add Chisel to components
 }
 </script>
