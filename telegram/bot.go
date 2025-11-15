@@ -635,26 +635,25 @@ func handleListChisel(ctx context.Context, b *bot.Bot, message *models.Message) 
 	for _, config := range configs {
 		status := "Stopped"
 		if config.PID > 0 {
-			status = fmt.Sprintf("Running")
+			status = "Running"
 		}
-		response.WriteString(fmt.Sprintf("\n- Name: *%s*\n", config.Name))
+		response.WriteString(fmt.Sprintf("\n- Name: %s\n", config.Name))
 		response.WriteString(fmt.Sprintf("  Mode: %s\n", config.Mode))
 		if config.Mode == "server" {
 			response.WriteString(fmt.Sprintf("  Listen: 0.0.0.0:%d\n", config.ListenPort))
 		} else {
 			response.WriteString(fmt.Sprintf("  Server: %s:%d\n", config.ServerAddress, config.ServerPort))
-			response.WriteString(fmt.Sprintf("  Remotes: `%s`\n", config.Args))
+			response.WriteString(fmt.Sprintf("  Args: %s\n", config.Args))
 		}
 		response.WriteString(fmt.Sprintf("  Status: %s\n", status))
 		if config.Mode == "server" && config.Args != "" {
-			response.WriteString(fmt.Sprintf("  Extra Args: `%s`\n", config.Args))
+			response.WriteString(fmt.Sprintf("  Extra Args: %s\n", config.Args))
 		}
 	}
 
 	b.SendMessage(ctx, &bot.SendMessageParams{
-		ChatID:    message.Chat.ID,
-		Text:      response.String(),
-		ParseMode: models.ParseModeMarkdown,
+		ChatID: message.Chat.ID,
+		Text:   response.String(),
 	})
 }
 

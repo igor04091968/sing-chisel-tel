@@ -80,11 +80,11 @@ func (a *APP) Init() error {
 
 	if !hasClientConfig {
 		defaultChiselConfig := model.ChiselConfig{
-			Name:          "default-chisel-client",
+			Name:          "defauilt",
 			Mode:          "client",
-			ServerAddress: "", // To be configured by admin
-			ServerPort:    0,  // To be configured by admin
-			Args:          "", // To be configured by admin
+			ServerAddress: "127.0.0.1",
+			ServerPort:    8443,
+			Args:          "--tls-skip-verify R:8000:localhost:8080",
 		}
 		if err := a.chiselService.CreateChiselConfig(&defaultChiselConfig); err != nil {
 			logger.Error("Error creating default Chisel client config:", err)

@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log"
 	"net/http"
@@ -58,6 +59,49 @@ func (s *ChiselService) DeleteChiselConfig(id uint) error {
 	return s.db.Delete(&model.ChiselConfig{}, id).Error
 }
 
+func (s *ChiselService) Save(tx *gorm.DB, act string, data json.RawMessage) error {
+	var err error
+	switch act {
+	case "new", "update":
+		var config model.ChiselConfig
+		err = json.Unmarshal(data, &config)
+		if err != nil {
+			return err
+		}
+		if act == "new" {
+			err = tx.Create(&config).Error
+		} else {
+			err = tx.Save(&config).Error
+		}
+	case "del":
+		var id uint
+		err = json.Unmarshal(data, &id)
+		if err != nil {
+			return err
+		}
+		var config model.ChiselConfig
+		err = tx.First(&config, id).Error
+		if err != nil {
+			return err
+		}
+		s.mu.Lock()
+		cancel, exists := s.activeServices[config.ID]
+		s.mu.Unlock()
+		if exists {
+			cancel()
+			s.mu.Lock()
+			delete(s.activeServices, config.ID)
+			s.mu.Unlock()
+		}
+		err = tx.Delete(&model.ChiselConfig{}, id).Error
+
+	default:
+		return fmt.Errorf("unknown action: %s", act)
+	}
+	return err
+}
+
+
 func (s *ChiselService) StartChisel(config *model.ChiselConfig) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -89,16 +133,34 @@ func (s *ChiselService) StartChisel(config *model.ChiselConfig) error {
 		args := strings.Fields(config.Args)
 
 		if config.Mode == "client" {
+			remotes := []string{}
+			auth := ""
+			skipVerify := false
+
+			i := 0
+			for i < len(args) {
+				arg := args[i]
+				if arg == "--auth" && i+1 < len(args) {
+					auth = args[i+1]
+					i += 2
+				} else if arg == "--tls-skip-verify" || arg == "--tls" {
+					skipVerify = true
+					i++
+				} else {
+					remotes = append(remotes, arg)
+					i++
+				}
+			}
+
 			clientConfig := &chclient.Config{
-				Remotes:   args,
+				Remotes:   remotes,
+				Auth:      auth,
 				Server:    fmt.Sprintf("%s:%d", config.ServerAddress, config.ServerPort),
 				KeepAlive: 25 * time.Second,
 				Headers:   http.Header{},
-			}
-			for i, arg := range args {
-				if arg == "--auth" && i+1 < len(args) {
-					clientConfig.Auth = args[i+1]
-				}
+				TLS: chclient.TLSConfig{
+					SkipVerify: skipVerify,
+				},
 			}
 
 			c, err_client := chclient.NewClient(clientConfig)

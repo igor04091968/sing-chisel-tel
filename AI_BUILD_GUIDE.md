@@ -146,3 +146,28 @@ The `s-ui` application now includes enhanced functionality for managing Chisel c
 *   **Chisel Client Args Parsing**: The internal parsing logic for Chisel client arguments (`Args` field) has been improved to correctly extract authentication arguments (`--auth`) and TLS flags (`--tls`) from the remote strings, and assign them to the appropriate fields in `chclient.Config`.
 
 **AI Agent Action**: When assisting with Chisel client setup, guide the user to either modify the `default-chisel-client` via the web panel or Telegram bot, or to create new Chisel client configurations as needed. If troubleshooting Chisel client startup, ensure the `Args` field is correctly formatted and that the server address and port are accurate.
+
+
+## 7. Common Runtime and Configuration Issues
+
+This section covers common errors that may occur after the application is built and running, and how an AI agent can address them.
+
+*   **Error: `Failed to decode remote '--auth': Missing ports` or `Failed to decode remote '--tls': Missing ports`**
+    *   **Cause:** The arguments for a Chisel client configuration (e.g., `--auth user:pass` or `--tls`) are being incorrectly passed as part of the remote connection string.
+    *   **Solution:** The argument parsing logic in `service/chisel.go` has been fixed to correctly identify `--auth`, `--tls-skip-verify`, and `--tls` as separate flags, filtering them out from the `Remotes` list that is passed to the Chisel library. If this error occurs, ensure the application is running the latest build with this fix.
+
+*   **Error: `http: TLS handshake error: client sent an HTTP request to an HTTPS server` (on server) and `websocket: bad handshake` (on client)**
+    *   **Cause:** The Chisel client is attempting to connect using `ws://` (insecure) to a server that expects `wss://` (secure/TLS). This happens when the client configuration in the `s-ui` database is missing a TLS flag.
+    *   **Solution:** The client configuration's `Args` field must include `--tls-skip-verify` or `--tls`. The application code has been updated to handle these flags and automatically attempt a `wss://` connection. The default client configuration in `app/app.go` has also been updated to include this flag as an example. Guide the user to update their existing Chisel client configuration to include one of these flags.
+
+*   **Error: `unknown object chisel` when saving from Web UI**
+    *   **Cause:** The backend API was missing the logic to handle saving `chisel` objects.
+    *   **Solution:** The save logic has been implemented. A `Save` method was added to `service/chisel.go` and a corresponding `case` was added to the main `Save` function in `service/config.go`. If this error occurs, ensure the application is running the latest build.
+
+*   **Error: `unable to load tokens: no such table: tokens` or `no such table: services` on startup**
+    *   **Cause:** The user is running a new version of the application with an older database file that is missing the `tokens` and `services` tables.
+    *   **Solution:** The database initialization logic in `database/db.go` has been updated to automatically create these tables if they are missing (`AutoMigrate`). This error should be resolved simply by running the latest build of the application.
+
+*   **Error: `UNIQUE constraint failed: chisel_configs.name` when adding a service**
+    *   **Cause:** This is a user configuration error. The user is trying to create a Chisel configuration with a name that is already in use.
+    *   **Solution:** Instruct the user to either choose a different, unique name for the new service or to first delete the existing service with the same name using the `/remove_chisel <name>` command or the web UI.

@@ -146,6 +146,66 @@ SUI_DB_FOLDER="db" SUI_DEBUG=true ./sui
 
 ### 'converting NULL to string is unsupported'
 
+
+
 -   **Problem:** Occurred when adding a new user.
+
 --   **Cause:** A SQL query was returning 'NULL' for a JSON field, and the database driver could not convert 'NULL' to a string.
+
 -   **Solution:** The SQL query was modified to use 'COALESCE' to replace 'NULL' values with an empty string.
+
+
+
+
+
+## 7. Recent Fixes and Improvements (Nov 2025)
+
+
+
+This section details recent bug fixes and enhancements to the application.
+
+
+
+### 7.1 Chisel Service Management
+
+
+
+A number of issues related to Chisel service management have been addressed.
+
+
+
+*   **Web UI Save Logic:** The backend logic for saving Chisel configurations from the web interface was implemented. Previously, attempting to save a Chisel service would result in an `unknown object chisel` error. This was resolved by:
+
+    1.  Adding a `Save(tx *gorm.DB, act string, data json.RawMessage) error` method to `service/chisel.go` to handle create, update, and delete operations within a database transaction.
+
+    2.  Adding a `case "chisel":` to the `switch` statement in `service/config.go` to delegate save operations to the new `ChiselService.Save` method.
+
+
+
+*   **Argument Parsing:** The argument parsing for Chisel clients in `service/chisel.go` has been made more robust. It now correctly handles `--auth`, `--tls-skip-verify`, and `--tls` flags, preventing them from being misinterpreted as remote addresses, which previously caused `Failed to decode remote` errors.
+
+
+
+*   **Default Configuration:** The default Chisel client configuration created on first startup (in `app/app.go`) has been improved. It now includes the `--tls-skip-verify` flag and an example remote mapping (`R:8000:localhost:8080`) to provide a better out-of-the-box experience for users with TLS-enabled servers. The default name was also shortened from `default-chisel-client` to `defauilt`.
+
+
+
+### 7.2 Database Auto-Migration
+
+
+
+The application startup process has been improved to handle database migrations more gracefully.
+
+
+
+*   **Missing Tables:** The `services` and `tokens` tables were not being created on startup for users with older database files, leading to `no such table` errors. This was fixed by adding `&model.Service{}` and `&model.Tokens{}` to the `db.AutoMigrate` call in `database/db.go`.
+
+
+
+### 7.3 Telegram Bot Commands
+
+
+
+*   **/list_chisel Command:** This command was failing silently for some users. The issue was traced to potential Markdown parsing errors in the Telegram API if configuration names or arguments contained special characters. The fix was to remove Markdown formatting from the response in `telegram/bot.go`, ensuring the message is always sent as plain text.
+
+

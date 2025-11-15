@@ -83,6 +83,8 @@ func InitDB(dbPath string) error {
 		&model.Client{},
 		&model.Changes{},
 		&model.ChiselConfig{},
+		&model.Service{},
+		&model.Tokens{},
 	)
 	if err != nil {
 		return err
