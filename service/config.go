@@ -231,3 +231,11 @@ func (s *ConfigService) GetChanges(actor string, chngKey string, count string) [
 	}
 	return chngs
 }
+
+func (s *ConfigService) GetAllInbounds() ([]model.Inbound, error) {
+	return s.InboundService.GetAllInbounds()
+}
+
+func (s *ConfigService) GetAllOutbounds() ([]model.Outbound, error) {
+	return s.OutboundService.GetAllOutbounds()
+}

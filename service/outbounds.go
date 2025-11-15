@@ -116,3 +116,13 @@ func (s *OutboundService) Save(tx *gorm.DB, act string, data json.RawMessage) er
 	}
 	return nil
 }
+
+func (o *OutboundService) GetAllOutbounds() ([]model.Outbound, error) {
+	db := database.GetDB()
+	var outbounds []model.Outbound
+	err := db.Model(model.Outbound{}).Find(&outbounds).Error
+	if err != nil {
+		return nil, err
+	}
+	return outbounds, nil
+}

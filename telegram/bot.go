@@ -32,6 +32,8 @@ type AppServices interface {
 	GetWebDomain() (string, error)
 	GetInboundByTag(tag string) (*model.Inbound, error)
 	BackupDB(exclude string) ([]byte, error)
+	GetAllInbounds() ([]model.Inbound, error)
+	GetAllOutbounds() ([]model.Outbound, error)
 }
 
 var (
@@ -121,7 +123,9 @@ func handleCommand(ctx context.Context, b *bot.Bot, message *models.Message) {
 				"/list_users\n" +
 				"/backup\n" +
 				"/add_in <type> <tag> <port>\n" +
-				"/add_out <json>\n\n" +
+				"/add_out <json>\n" +
+				"/list_inbounds\n" +
+				"/list_outbounds\n\n" +
 				"Chisel Commands:\n" +
 				"/add_chisel_server <name> <port> [extra_args]\n" +
 				"/add_chisel_client <name> <server:port> <remotes> [extra_args]\n" +
@@ -165,6 +169,10 @@ func handleCommand(ctx context.Context, b *bot.Bot, message *models.Message) {
 		handleStartChisel(ctx, b, message, args)
 	case "/stop_chisel":
 		handleStopChisel(ctx, b, message, args)
+	case "/list_inbounds":
+		handleListInbounds(ctx, b, message)
+	case "/list_outbounds":
+		handleListOutbounds(ctx, b, message)
 	default:
 		b.SendMessage(ctx, &bot.SendMessageParams{
 			ChatID: message.Chat.ID,
@@ -737,5 +745,49 @@ func handleStopChisel(ctx context.Context, b *bot.Bot, message *models.Message, 
 	}
 
 	b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: fmt.Sprintf("Chisel service '%s' stopped successfully.", name)})
+}
+
+func handleListInbounds(ctx context.Context, b *bot.Bot, message *models.Message) {
+	inbounds, err := services.GetAllInbounds()
+	if err != nil {
+		log.Printf("Error getting all inbounds: %v", err)
+		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: "Error getting inbounds."})
+		return
+	}
+
+	if len(inbounds) == 0 {
+		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: "No inbounds configured."})
+		return
+	}
+
+	var response strings.Builder
+	response.WriteString("Configured Inbounds:\n")
+	for _, inbound := range inbounds {
+		response.WriteString(fmt.Sprintf("- ID: %d, Tag: %s, Type: %s\n", inbound.Id, inbound.Tag, inbound.Type))
+	}
+
+	b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: response.String()})
+}
+
+func handleListOutbounds(ctx context.Context, b *bot.Bot, message *models.Message) {
+	outbounds, err := services.GetAllOutbounds()
+	if err != nil {
+		log.Printf("Error getting all outbounds: %v", err)
+		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: "Error getting outbounds."})
+		return
+	}
+
+	if len(outbounds) == 0 {
+		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: "No outbounds configured."})
+		return
+	}
+
+	var response strings.Builder
+	response.WriteString("Configured Outbounds:\n")
+	for _, outbound := range outbounds {
+		response.WriteString(fmt.Sprintf("- ID: %d, Tag: %s, Type: %s\n", outbound.Id, outbound.Tag, outbound.Type))
+	}
+
+	b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: response.String()})
 }
 

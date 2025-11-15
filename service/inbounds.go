@@ -384,3 +384,13 @@ func (s *InboundService) GetInboundByTag(tag string) (*model.Inbound, error) {
 	return &inbound, nil
 }
 
+func (s *InboundService) GetAllInbounds() ([]model.Inbound, error) {
+	db := database.GetDB()
+	var inbounds []model.Inbound
+	err := db.Model(model.Inbound{}).Find(&inbounds).Error
+	if err != nil {
+		return nil, err
+	}
+	return inbounds, nil
+}
+
