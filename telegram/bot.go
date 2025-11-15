@@ -292,7 +292,7 @@ func handleSublink(ctx context.Context, b *bot.Bot, message *models.Message, arg
 	client, err := services.GetUserByEmail(email)
 	if err != nil {
 		log.Printf("Error finding user %s: %v", email, err)
-		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: fmt.Sprintf("User %s not found.", email)})
+		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: fmt.Sprintf("Error: User %s not found or database error: %v", email, err)})
 		return
 	}
 	log.Printf("handleSublink: found client: %+v", client)
@@ -300,7 +300,11 @@ func handleSublink(ctx context.Context, b *bot.Bot, message *models.Message, arg
 	var inboundIDs []uint
 	if err := json.Unmarshal(client.Inbounds, &inboundIDs); err != nil {
 		log.Printf("Error unmarshalling inbounds for user %s: %v", email, err)
-		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: "Error reading user inbounds."})
+		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: fmt.Sprintf("Error: Could not read user inbounds configuration: %v", err)})
+		return
+	}
+	if len(inboundIDs) == 0 {
+		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: fmt.Sprintf("No inbounds configured for user %s. Please add inbounds to the user.", email)})
 		return
 	}
 	log.Printf("handleSublink: found inbound IDs: %v", inboundIDs)
@@ -308,7 +312,11 @@ func handleSublink(ctx context.Context, b *bot.Bot, message *models.Message, arg
 	inbounds, err := services.FromIds(inboundIDs)
 	if err != nil {
 		log.Printf("Error getting inbounds for user %s: %v", email, err)
-		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: "Error getting user inbounds."})
+		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: fmt.Sprintf("Error: Could not retrieve inbound details for user %s: %v", email, err)})
+		return
+	}
+	if len(inbounds) == 0 {
+		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: fmt.Sprintf("No active inbounds found for user %s based on configured IDs.", email)})
 		return
 	}
 	log.Printf("handleSublink: found inbounds: %+v", inbounds)
@@ -316,7 +324,11 @@ func handleSublink(ctx context.Context, b *bot.Bot, message *models.Message, arg
 	webDomain, err := services.GetWebDomain()
 	if err != nil {
 		log.Printf("Error getting web domain: %v", err)
-		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: "Error getting web domain."})
+		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: fmt.Sprintf("Error: Could not retrieve web domain for link generation: %v", err)})
+		return
+	}
+	if webDomain == "" {
+		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: "Error: Web domain is not configured. Cannot generate subscription links."})
 		return
 	}
 	log.Printf("handleSublink: found web domain: %s", webDomain)
@@ -324,12 +336,16 @@ func handleSublink(ctx context.Context, b *bot.Bot, message *models.Message, arg
 	var allLinks []string
 	for _, inbound := range inbounds {
 		links := util.LinkGenerator(client.Config, inbound, webDomain)
-		allLinks = append(allLinks, links...)
+		if len(links) > 0 {
+			allLinks = append(allLinks, links...)
+		} else {
+			log.Printf("handleSublink: LinkGenerator returned no links for inbound ID %d, tag %s", inbound.Id, inbound.Tag)
+		}
 	}
 	log.Printf("handleSublink: generated links: %v", allLinks)
 
 	if len(allLinks) == 0 {
-		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: fmt.Sprintf("No subscription links found for user %s.", email)})
+		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: fmt.Sprintf("No subscription links could be generated for user %s. Check user configuration, inbounds, and web domain settings.", email)})
 		return
 	}
 

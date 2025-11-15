@@ -4,6 +4,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"log" // Added for logging
 	"net/url"
 	"strings"
 
@@ -14,37 +15,50 @@ import (
 var InboundTypeWithLink = []string{"socks", "http", "mixed", "shadowsocks", "naive", "hysteria", "hysteria2", "anytls", "tuic", "vless", "trojan", "vmess"}
 
 func LinkGenerator(clientConfig json.RawMessage, i *model.Inbound, hostname string) []string {
-	inbound, err := i.MarshalFull()
+	inboundMap, err := i.MarshalFull()
 	if err != nil {
+		log.Printf("LinkGenerator: failed to marshal inbound to map: %v", err)
 		return []string{}
 	}
 
 	var tls map[string]interface{}
-	if i.TlsId > 0 {
+	if i.TlsId > 0 && i.Tls != nil {
 		tls = prepareTls(i.Tls)
 	}
 
 	var userConfig map[string]map[string]interface{}
 	if err := json.Unmarshal(clientConfig, &userConfig); err != nil {
+		log.Printf("LinkGenerator: failed to unmarshal client config: %v", err)
 		return []string{}
 	}
 
 	var Addrs []map[string]interface{}
-	json.Unmarshal(i.Addrs, &Addrs)
+	if len(i.Addrs) > 0 {
+		if err := json.Unmarshal(i.Addrs, &Addrs); err != nil {
+			log.Printf("LinkGenerator: failed to unmarshal inbound addrs: %v", err)
+			return []string{}
+		}
+	}
+	
 	if len(Addrs) == 0 {
+		listenPort, ok := (*inboundMap)["listen_port"].(float64)
+		if !ok {
+			log.Printf("LinkGenerator: listen_port not found or not a number in inbound %s", i.Tag)
+			return []string{}
+		}
 		Addrs = append(Addrs, map[string]interface{}{
 			"server":      hostname,
-			"server_port": (*inbound)["listen_port"],
+			"server_port": listenPort,
 			"remark":      i.Tag,
 		})
-		if i.TlsId > 0 {
+		if i.TlsId > 0 && tls != nil {
 			Addrs[0]["tls"] = tls
 		}
 	} else {
 		for index, addr := range Addrs {
-			addrRemark, _ := addr["remark"].(string)
+			addrRemark, _ := addr["remark"].(string) // _ is ok here, default to empty string
 			Addrs[index]["remark"] = i.Tag + addrRemark
-			if i.TlsId > 0 {
+			if i.TlsId > 0 && tls != nil {
 				newTls := map[string]interface{}{}
 				for k, v := range tls {
 					newTls[k] = v
@@ -61,56 +75,117 @@ func LinkGenerator(clientConfig json.RawMessage, i *model.Inbound, hostname stri
 		}
 	}
 
+	var links []string
 	switch i.Type {
 	case "socks":
-		return socksLink(userConfig["socks"], *inbound, Addrs)
+		if uc, ok := userConfig["socks"]; ok {
+			links = socksLink(uc, *inboundMap, Addrs)
+		} else {
+			log.Printf("LinkGenerator: socks user config not found for inbound %s", i.Tag)
+		}
 	case "http":
-		return httpLink(userConfig["http"], *inbound, Addrs)
+		if uc, ok := userConfig["http"]; ok {
+			links = httpLink(uc, *inboundMap, Addrs)
+		} else {
+			log.Printf("LinkGenerator: http user config not found for inbound %s", i.Tag)
+		}
 	case "mixed":
-		return append(
-			socksLink(userConfig["socks"], *inbound, Addrs),
-			httpLink(userConfig["http"], *inbound, Addrs)...,
-		)
+		if ucSocks, ok := userConfig["socks"]; ok {
+			links = append(links, socksLink(ucSocks, *inboundMap, Addrs)...)
+		} else {
+			log.Printf("LinkGenerator: mixed socks user config not found for inbound %s", i.Tag)
+		}
+		if ucHttp, ok := userConfig["http"]; ok {
+			links = append(links, httpLink(ucHttp, *inboundMap, Addrs)...)
+		} else {
+			log.Printf("LinkGenerator: mixed http user config not found for inbound %s", i.Tag)
+		}
 	case "shadowsocks":
-		return shadowsocksLink(userConfig, *inbound, Addrs)
+		links = shadowsocksLink(userConfig, *inboundMap, Addrs)
 	case "naive":
-		return naiveLink(userConfig["naive"], *inbound, Addrs)
+		if uc, ok := userConfig["naive"]; ok {
+			links = naiveLink(uc, *inboundMap, Addrs)
+		} else {
+			log.Printf("LinkGenerator: naive user config not found for inbound %s", i.Tag)
+		}
 	case "hysteria":
-		return hysteriaLink(userConfig["hysteria"], *inbound, Addrs)
+		if uc, ok := userConfig["hysteria"]; ok {
+			links = hysteriaLink(uc, *inboundMap, Addrs)
+		} else {
+			log.Printf("LinkGenerator: hysteria user config not found for inbound %s", i.Tag)
+		}
 	case "hysteria2":
-		return hysteria2Link(userConfig["hysteria2"], *inbound, Addrs)
+		if uc, ok := userConfig["hysteria2"]; ok {
+			links = hysteria2Link(uc, *inboundMap, Addrs)
+		} else {
+			log.Printf("LinkGenerator: hysteria2 user config not found for inbound %s", i.Tag)
+		}
 	case "tuic":
-		return tuicLink(userConfig["tuic"], *inbound, Addrs)
+		if uc, ok := userConfig["tuic"]; ok {
+			links = tuicLink(uc, *inboundMap, Addrs)
+		} else {
+			log.Printf("LinkGenerator: tuic user config not found for inbound %s", i.Tag)
+		}
 	case "vless":
-		return vlessLink(userConfig["vless"], *inbound, Addrs)
+		if uc, ok := userConfig["vless"]; ok {
+			links = vlessLink(uc, *inboundMap, Addrs)
+		} else {
+			log.Printf("LinkGenerator: vless user config not found for inbound %s", i.Tag)
+		}
 	case "anytls":
-		return anytlsLink(userConfig["anytls"], Addrs)
+		if uc, ok := userConfig["anytls"]; ok {
+			links = anytlsLink(uc, Addrs)
+		} else {
+			log.Printf("LinkGenerator: anytls user config not found for inbound %s", i.Tag)
+		}
 	case "trojan":
-		return trojanLink(userConfig["trojan"], *inbound, Addrs)
+		if uc, ok := userConfig["trojan"]; ok {
+			links = trojanLink(uc, *inboundMap, Addrs)
+		} else {
+			log.Printf("LinkGenerator: trojan user config not found for inbound %s", i.Tag)
+		}
 	case "vmess":
-		return vmessLink(userConfig["vmess"], *inbound, Addrs)
+		if uc, ok := userConfig["vmess"]; ok {
+			links = vmessLink(uc, *inboundMap, Addrs)
+		} else {
+			log.Printf("LinkGenerator: vmess user config not found for inbound %s", i.Tag)
+		}
+	default:
+		log.Printf("LinkGenerator: unsupported inbound type %s for link generation for inbound %s", i.Type, i.Tag)
 	}
 
-	return []string{}
+	return links
 }
 
 func prepareTls(t *model.Tls) map[string]interface{} {
 	var iTls, oTls map[string]interface{}
-	json.Unmarshal(t.Client, &oTls)
-	json.Unmarshal(t.Server, &iTls)
+	if err := json.Unmarshal(t.Client, &oTls); err != nil {
+		log.Printf("prepareTls: failed to unmarshal client TLS config: %v", err)
+		return nil
+	}
+	if err := json.Unmarshal(t.Server, &iTls); err != nil {
+		log.Printf("prepareTls: failed to unmarshal server TLS config: %v", err)
+		return nil
+	}
 
 	for k, v := range iTls {
 		switch k {
 		case "enabled", "server_name", "alpn":
 			oTls[k] = v
 		case "reality":
-			reality := v.(map[string]interface{})
-			clientReality := oTls["reality"].(map[string]interface{})
-			clientReality["enabled"] = reality["enabled"]
-			if short_ids, hasSIds := reality["short_id"].([]interface{}); hasSIds && len(short_ids) > 0 {
-				clientReality["short_id"] = short_ids[common.RandomInt(len(short_ids))]
+			if reality, ok := v.(map[string]interface{}); ok {
+				if clientReality, ok := oTls["reality"].(map[string]interface{}); ok {
+					clientReality["enabled"] = reality["enabled"]
+					if short_ids, hasSIds := reality["short_id"].([]interface{}); hasSIds && len(short_ids) > 0 {
+						clientReality["short_id"] = short_ids[common.RandomInt(len(short_ids))]
+					}
+					oTls["reality"] = clientReality
+				} else {
+					log.Printf("prepareTls: 'reality' not found or not a map in client TLS config")
+				}
+			} else {
+				log.Printf("prepareTls: 'reality' not found or not a map in server TLS config")
 			}
-			oTls["reality"] = clientReality
 		}
 	}
 	return oTls
@@ -118,20 +193,62 @@ func prepareTls(t *model.Tls) map[string]interface{} {
 
 func socksLink(userConfig map[string]interface{}, inbound map[string]interface{}, addrs []map[string]interface{}) []string {
 	var links []string
+	username, ok := userConfig["username"].(string)
+	if !ok {
+		log.Printf("socksLink: username not found or not a string in user config")
+		return []string{}
+	}
+	password, ok := userConfig["password"].(string)
+	if !ok {
+		log.Printf("socksLink: password not found or not a string in user config")
+		return []string{}
+	}
+
 	for _, addr := range addrs {
-		links = append(links, fmt.Sprintf("socks5://%s:%s@%s:%d", userConfig["username"], userConfig["password"], addr["server"].(string), uint(addr["server_port"].(float64))))
+		server, ok := addr["server"].(string)
+		if !ok {
+			log.Printf("socksLink: server not found or not a string in addr: %+v", addr)
+			continue
+		}
+		portFloat, ok := addr["server_port"].(float64)
+		if !ok {
+			log.Printf("socksLink: server_port not found or not a number in addr: %+v", addr)
+			continue
+		}
+		links = append(links, fmt.Sprintf("socks5://%s:%s@%s:%d", username, password, server, uint(portFloat)))
 	}
 	return links
 }
 
 func httpLink(userConfig map[string]interface{}, inbound map[string]interface{}, addrs []map[string]interface{}) []string {
 	var links []string
-	var protocol string = "http"
+	username, ok := userConfig["username"].(string)
+	if !ok {
+		log.Printf("httpLink: username not found or not a string in user config")
+		return []string{}
+	}
+	password, ok := userConfig["password"].(string)
+	if !ok {
+		log.Printf("httpLink: password not found or not a string in user config")
+		return []string{}
+	}
+
 	for _, addr := range addrs {
-		if addr["tls"] != nil {
+		protocol := "http"
+		if tls, ok := addr["tls"].(map[string]interface{}); ok && tls != nil {
 			protocol = "https"
 		}
-		links = append(links, fmt.Sprintf("%s://%s:%s@%s:%d", protocol, userConfig["username"], userConfig["password"], addr["server"].(string), uint(addr["server_port"].(float64))))
+		server, ok := addr["server"].(string)
+		if !ok {
+			log.Printf("httpLink: server not found or not a string in addr: %+v", addr)
+			continue
+		}
+		portFloat, ok := addr["server_port"].(float64)
+		if !ok {
+			log.Printf("httpLink: server_port not found or not a number in addr: %+v", addr)
+			continue
+		}
+		links = append(links, fmt.Sprintf("%s://%s:%s@%s:%d", protocol, username, password, server, uint(portFloat)))
 	}
 	return links
 }
@@ -142,16 +259,43 @@ func shadowsocksLink(
 	addrs []map[string]interface{}) []string {
 
 	var userPass []string
-	method, _ := inbound["method"].(string)
+	method, ok := inbound["method"].(string)
+	if !ok {
+		log.Printf("shadowsocksLink: method not found or not a string in inbound config")
+		return []string{}
+	}
+
 	if strings.HasPrefix(method, "2022") {
-		inbPass, _ := inbound["password"].(string)
+		inbPass, ok := inbound["password"].(string)
+		if !ok {
+			log.Printf("shadowsocksLink: inbound password not found or not a string for 2022 method")
+			return []string{}
+		}
 		userPass = append(userPass, inbPass)
 	}
 	var pass string
 	if method == "2022-blake3-aes-128-gcm" {
-		pass, _ = userConfig["shadowsocks16"]["password"].(string)
+		if uc, ok := userConfig["shadowsocks16"]; ok {
+			pass, ok = uc["password"].(string)
+			if !ok {
+				log.Printf("shadowsocksLink: shadowsocks16 password not found or not a string in user config")
+				return []string{}
+			}
+		} else {
+			log.Printf("shadowsocksLink: shadowsocks16 user config not found")
+			return []string{}
+		}
 	} else {
-		pass, _ = userConfig["shadowsocks"]["password"].(string)
+		if uc, ok := userConfig["shadowsocks"]; ok {
+			pass, ok = uc["password"].(string)
+			if !ok {
+				log.Printf("shadowsocksLink: shadowsocks password not found or not a string in user config")
+				return []string{}
+			}
+		} else {
+			log.Printf("shadowsocksLink: shadowsocks user config not found")
+			return []string{}
+		}
 	}
 	userPass = append(userPass, pass)
 
@@ -159,8 +303,18 @@ func shadowsocksLink(
 
 	var links []string
 	for _, addr := range addrs {
-		port, _ := addr["server_port"].(float64)
-		links = append(links, fmt.Sprintf("%s@%s:%.0f#%s", uriBase, addr["server"].(string), port, addr["remark"].(string)))
+		server, ok := addr["server"].(string)
+		if !ok {
+			log.Printf("shadowsocksLink: server not found or not a string in addr: %+v", addr)
+			continue
+		}
+		portFloat, ok := addr["server_port"].(float64)
+		if !ok {
+			log.Printf("shadowsocksLink: server_port not found or not a number in addr: %+v", addr)
+			continue
+		}
+		remark, _ := addr["remark"].(string) // _ is ok here
+		links = append(links, fmt.Sprintf("%s@%s:%.0f#%s", uriBase, server, portFloat, remark))
 	}
 	return links
 }
@@ -170,8 +324,16 @@ func naiveLink(
 	inbound map[string]interface{},
 	addrs []map[string]interface{}) []string {
 
-	password, _ := userConfig["password"].(string)
-	username, _ := userConfig["username"].(string)
+	password, ok := userConfig["password"].(string)
+	if !ok {
+		log.Printf("naiveLink: password not found or not a string in user config")
+		return []string{}
+	}
+	username, ok := userConfig["username"].(string)
+	if !ok {
+		log.Printf("naiveLink: username not found or not a string in user config")
+		return []string{}
+	}
 
 	baseUri := "http2://"
 	var links []string
@@ -179,14 +341,16 @@ func naiveLink(
 	for _, addr := range addrs {
 		params := map[string]string{}
 		params["padding"] = "1"
-		if tls, ok := addr["tls"].(map[string]interface{}); ok {
+		if tls, ok := addr["tls"].(map[string]interface{}); ok && tls != nil {
 			if sni, ok := tls["server_name"].(string); ok {
 				params["peer"] = sni
 			}
 			if alpn, ok := tls["alpn"].([]interface{}); ok {
 				alpnList := make([]string, len(alpn))
 				for i, v := range alpn {
-					alpnList[i] = v.(string)
+					if s, ok := v.(string); ok {
+						alpnList[i] = s
+					}
 				}
 				params["alpn"] = strings.Join(alpnList, ",")
 			}
@@ -200,9 +364,19 @@ func naiveLink(
 			params["tfo"] = "0"
 		}
 
-		port, _ := addr["server_port"].(float64)
-		uri := baseUri + toBase64([]byte(fmt.Sprintf("%s:%s@%s:%.0f", username, password, addr["server"].(string), port)))
-		links = append(links, addParams(uri, params, addr["remark"].(string)))
+		server, ok := addr["server"].(string)
+		if !ok {
+			log.Printf("naiveLink: server not found or not a string in addr: %+v", addr)
+			continue
+		}
+		portFloat, ok := addr["server_port"].(float64)
+		if !ok {
+			log.Printf("naiveLink: server_port not found or not a number in addr: %+v", addr)
+			continue
+		}
+		remark, _ := addr["remark"].(string) // _ is ok here
+		uri := baseUri + toBase64([]byte(fmt.Sprintf("%s:%s@%s:%.0f", username, password, server, portFloat)))
+		links = append(links, addParams(uri, params, remark))
 	}
 	return links
 }
@@ -226,7 +400,7 @@ func hysteriaLink(
 		if auth, ok := userConfig["auth_str"].(string); ok {
 			params["auth"] = auth
 		}
-		if tls, ok := addr["tls"].(map[string]interface{}); ok {
+		if tls, ok := addr["tls"].(map[string]interface{}); ok && tls != nil {
 			getTlsParams(&params, tls, "insecure")
 		}
 		if obfs, ok := inbound["obfs"].(string); ok {
@@ -238,18 +412,34 @@ func hysteriaLink(
 			params["fastopen"] = "0"
 		}
 		var outJson map[string]interface{}
-		json.Unmarshal(inbound["out_json"].(json.RawMessage), &outJson)
+		if outJsonRaw, ok := inbound["out_json"].(json.RawMessage); ok {
+			if err := json.Unmarshal(outJsonRaw, &outJson); err != nil {
+				log.Printf("hysteriaLink: failed to unmarshal out_json: %v", err)
+			}
+		}
 		if mport, ok := outJson["server_ports"].([]interface{}); ok {
 			mportList := make([]string, len(mport))
 			for i, v := range mport {
-				mportList[i] = v.(string)
+				if s, ok := v.(string); ok {
+					mportList[i] = s
+				}
 			}
 			params["mport"] = strings.Join(mportList, ",")
 		}
 
-		port, _ := addr["server_port"].(float64)
-		uri := fmt.Sprintf("%s%s:%.0f", baseUri, addr["server"].(string), port)
-		links = append(links, addParams(uri, params, addr["remark"].(string)))
+		server, ok := addr["server"].(string)
+		if !ok {
+			log.Printf("hysteriaLink: server not found or not a string in addr: %+v", addr)
+			continue
+		}
+		portFloat, ok := addr["server_port"].(float64)
+		if !ok {
+			log.Printf("hysteriaLink: server_port not found or not a number in addr: %+v", addr)
+			continue
+		}
+		remark, _ := addr["remark"].(string) // _ is ok here
+		uri := fmt.Sprintf("%s%s:%.0f", baseUri, server, portFloat)
+		links = append(links, addParams(uri, params, remark))
 	}
 
 	return links
@@ -260,7 +450,11 @@ func hysteria2Link(
 	inbound map[string]interface{},
 	addrs []map[string]interface{}) []string {
 
-	password, _ := userConfig["password"].(string)
+	password, ok := userConfig["password"].(string)
+	if !ok {
+		log.Printf("hysteria2Link: password not found or not a string in user config")
+		return []string{}
+	}
 	baseUri := fmt.Sprintf("%s%s@", "hysteria2://", password)
 	var links []string
 
@@ -272,10 +466,10 @@ func hysteria2Link(
 		if downmbps, ok := inbound["down_mbps"].(float64); ok {
 			params["upmbps"] = fmt.Sprintf("%.0f", downmbps)
 		}
-		if tls, ok := addr["tls"].(map[string]interface{}); ok {
+		if tls, ok := addr["tls"].(map[string]interface{}); ok && tls != nil {
 			getTlsParams(&params, tls, "insecure")
 		}
-		if obfs, ok := inbound["obfs"].(map[string]interface{}); ok {
+		if obfs, ok := inbound["obfs"].(map[string]interface{}); ok && obfs != nil {
 			if obfsType, ok := obfs["type"].(string); ok {
 				params["obfs"] = obfsType
 			}
@@ -289,18 +483,34 @@ func hysteria2Link(
 			params["fastopen"] = "0"
 		}
 		var outJson map[string]interface{}
-		json.Unmarshal(inbound["out_json"].(json.RawMessage), &outJson)
+		if outJsonRaw, ok := inbound["out_json"].(json.RawMessage); ok {
+			if err := json.Unmarshal(outJsonRaw, &outJson); err != nil {
+				log.Printf("hysteria2Link: failed to unmarshal out_json: %v", err)
+			}
+		}
 		if mport, ok := outJson["server_ports"].([]interface{}); ok {
 			mportList := make([]string, len(mport))
 			for i, v := range mport {
-				mportList[i] = v.(string)
+				if s, ok := v.(string); ok {
+					mportList[i] = s
+				}
 			}
 			params["mport"] = strings.Join(mportList, ",")
 		}
 
-		port, _ := addr["server_port"].(float64)
-		uri := fmt.Sprintf("%s%s:%.0f", baseUri, addr["server"].(string), port)
-		links = append(links, addParams(uri, params, addr["remark"].(string)))
+		server, ok := addr["server"].(string)
+		if !ok {
+			log.Printf("hysteria2Link: server not found or not a string in addr: %+v", addr)
+			continue
+		}
+		portFloat, ok := addr["server_port"].(float64)
+		if !ok {
+			log.Printf("hysteria2Link: server_port not found or not a number in addr: %+v", addr)
+			continue
+		}
+		remark, _ := addr["remark"].(string) // _ is ok here
+		uri := fmt.Sprintf("%s%s:%.0f", baseUri, server, portFloat)
+		links = append(links, addParams(uri, params, remark))
 	}
 
 	return links
@@ -310,19 +520,33 @@ func anytlsLink(
 	userConfig map[string]interface{},
 	addrs []map[string]interface{}) []string {
 
-	password, _ := userConfig["password"].(string)
+	password, ok := userConfig["password"].(string)
+	if !ok {
+		log.Printf("anytlsLink: password not found or not a string in user config")
+		return []string{}
+	}
 	baseUri := fmt.Sprintf("%s%s@", "anytls://", password)
 	var links []string
 
 	for _, addr := range addrs {
 		params := map[string]string{}
-		if tls, ok := addr["tls"].(map[string]interface{}); ok {
+		if tls, ok := addr["tls"].(map[string]interface{}); ok && tls != nil {
 			getTlsParams(&params, tls, "insecure")
 		}
 
-		port, _ := addr["server_port"].(float64)
-		uri := fmt.Sprintf("%s%s:%.0f", baseUri, addr["server"].(string), port)
-		links = append(links, addParams(uri, params, addr["remark"].(string)))
+		server, ok := addr["server"].(string)
+		if !ok {
+			log.Printf("anytlsLink: server not found or not a string in addr: %+v", addr)
+			continue
+		}
+		portFloat, ok := addr["server_port"].(float64)
+		if !ok {
+			log.Printf("anytlsLink: server_port not found or not a number in addr: %+v", addr)
+			continue
+		}
+		remark, _ := addr["remark"].(string) // _ is ok here
+		uri := fmt.Sprintf("%s%s:%.0f", baseUri, server, portFloat)
+		links = append(links, addParams(uri, params, remark))
 	}
 
 	return links
@@ -333,23 +557,41 @@ func tuicLink(
 	inbound map[string]interface{},
 	addrs []map[string]interface{}) []string {
 
-	password, _ := userConfig["password"].(string)
-	uuid, _ := userConfig["uuid"].(string)
+	password, ok := userConfig["password"].(string)
+	if !ok {
+		log.Printf("tuicLink: password not found or not a string in user config")
+		return []string{}
+	}
+	uuid, ok := userConfig["uuid"].(string)
+	if !ok {
+		log.Printf("tuicLink: uuid not found or not a string in user config")
+		return []string{}
+	}
 	baseUri := fmt.Sprintf("%s%s:%s@", "tuic://", uuid, password)
 	var links []string
 
 	for _, addr := range addrs {
 		params := map[string]string{}
-		if tls, ok := addr["tls"].(map[string]interface{}); ok {
+		if tls, ok := addr["tls"].(map[string]interface{}); ok && tls != nil {
 			getTlsParams(&params, tls, "insecure")
 		}
 		if congestionControl, ok := inbound["congestion_control"].(string); ok {
 			params["congestion_control"] = congestionControl
 		}
 
-		port, _ := addr["server_port"].(float64)
-		uri := fmt.Sprintf("%s%s:%.0f", baseUri, addr["server"].(string), port)
-		links = append(links, addParams(uri, params, addr["remark"].(string)))
+		server, ok := addr["server"].(string)
+		if !ok {
+			log.Printf("tuicLink: server not found or not a string in addr: %+v", addr)
+			continue
+		}
+		portFloat, ok := addr["server_port"].(float64)
+		if !ok {
+			log.Printf("tuicLink: server_port not found or not a number in addr: %+v", addr)
+			continue
+		}
+		remark, _ := addr["remark"].(string) // _ is ok here
+		uri := fmt.Sprintf("%s%s:%.0f", baseUri, server, portFloat)
+		links = append(links, addParams(uri, params, remark))
 	}
 
 	return links
@@ -360,21 +602,37 @@ func vlessLink(
 	inbound map[string]interface{},
 	addrs []map[string]interface{}) []string {
 
-	uuid, _ := userConfig["uuid"].(string)
+	uuid, ok := userConfig["uuid"].(string)
+	if !ok {
+		log.Printf("vlessLink: uuid not found or not a string in user config")
+		return []string{}
+	}
 	baseParams := getTransportParams(inbound["transport"])
 	var links []string
 
 	for _, addr := range addrs {
 		params := baseParams
-		if tls, ok := addr["tls"].(map[string]interface{}); ok && tls["enabled"].(bool) {
-			getTlsParams(&params, tls, "allowInsecure")
-			if flow, ok := userConfig["flow"].(string); ok {
-				params["flow"] = flow
+		if tls, ok := addr["tls"].(map[string]interface{}); ok && tls != nil {
+			if enabled, ok := tls["enabled"].(bool); ok && enabled {
+				getTlsParams(&params, tls, "allowInsecure")
+				if flow, ok := userConfig["flow"].(string); ok {
+					params["flow"] = flow
+				}
 			}
 		}
-		port, _ := addr["server_port"].(float64)
-		uri := fmt.Sprintf("vless://%s@%s:%.0f", uuid, addr["server"].(string), port)
-		uri = addParams(uri, params, addr["remark"].(string))
+		server, ok := addr["server"].(string)
+		if !ok {
+			log.Printf("vlessLink: server not found or not a string in addr: %+v", addr)
+			continue
+		}
+		portFloat, ok := addr["server_port"].(float64)
+		if !ok {
+			log.Printf("vlessLink: server_port not found or not a number in addr: %+v", addr)
+			continue
+		}
+		remark, _ := addr["remark"].(string) // _ is ok here
+		uri := fmt.Sprintf("vless://%s@%s:%.0f", uuid, server, portFloat)
+		uri = addParams(uri, params, remark)
 		links = append(links, uri)
 	}
 
@@ -385,18 +643,34 @@ func trojanLink(
 	userConfig map[string]interface{},
 	inbound map[string]interface{},
 	addrs []map[string]interface{}) []string {
-	password, _ := userConfig["password"].(string)
+	password, ok := userConfig["password"].(string)
+	if !ok {
+		log.Printf("trojanLink: password not found or not a string in user config")
+		return []string{}
+	}
 	baseParams := getTransportParams(inbound["transport"])
 	var links []string
 
 	for _, addr := range addrs {
 		params := baseParams
-		if tls, ok := addr["tls"].(map[string]interface{}); ok && tls["enabled"].(bool) {
-			getTlsParams(&params, tls, "allowInsecure")
+		if tls, ok := addr["tls"].(map[string]interface{}); ok && tls != nil {
+			if enabled, ok := tls["enabled"].(bool); ok && enabled {
+				getTlsParams(&params, tls, "allowInsecure")
+			}
 		}
-		port, _ := addr["server_port"].(float64)
-		uri := fmt.Sprintf("trojan://%s@%s:%.0f", password, addr["server"].(string), port)
-		uri = addParams(uri, params, addr["remark"].(string))
+		server, ok := addr["server"].(string)
+		if !ok {
+			log.Printf("trojanLink: server not found or not a string in addr: %+v", addr)
+			continue
+		}
+		portFloat, ok := addr["server_port"].(float64)
+		if !ok {
+			log.Printf("trojanLink: server_port not found or not a number in addr: %+v", addr)
+			continue
+		}
+		remark, _ := addr["remark"].(string) // _ is ok here
+		uri := fmt.Sprintf("trojan://%s@%s:%.0f", password, server, portFloat)
+		uri = addParams(uri, params, remark)
 		links = append(links, uri)
 	}
 
@@ -408,7 +682,11 @@ func vmessLink(
 	inbound map[string]interface{},
 	addrs []map[string]interface{}) []string {
 
-	uuid, _ := userConfig["uuid"].(string)
+	uuid, ok := userConfig["uuid"].(string)
+	if !ok {
+		log.Printf("vmessLink: uuid not found or not a string in user config")
+		return []string{}
+	}
 	trasportParams := getTransportParams(inbound["transport"])
 	var links []string
 
@@ -417,50 +695,77 @@ func vmessLink(
 		"id":  uuid,
 		"aid": 0,
 	}
-	if trasportParams["type"] == "http" || trasportParams["type"] == "tcp" {
+	transportType := trasportParams["type"]
+
+	if transportType == "http" || transportType == "tcp" {
 		baseParams["net"] = "tcp"
-		if trasportParams["type"] == "http" {
+		if transportType == "http" {
 			baseParams["type"] = "http"
 		}
 	} else {
-		baseParams["net"] = trasportParams["type"]
+		baseParams["net"] = transportType
 	}
 
 	for _, addr := range addrs {
 		obj := baseParams
-		obj["add"], _ = addr["server"].(string)
-		port, _ := addr["server_port"].(float64)
-		obj["port"] = uint(port)
-		obj["ps"], _ = addr["remark"].(string)
-		if trasportParams["host"] != "" {
-			obj["host"] = trasportParams["host"]
+		server, ok := addr["server"].(string)
+		if !ok {
+			log.Printf("vmessLink: server not found or not a string in addr: %+v", addr)
+			continue
 		}
-		if trasportParams["path"] != "" {
-			obj["path"] = trasportParams["path"]
+		obj["add"] = server
+		portFloat, ok := addr["server_port"].(float64)
+		if !ok {
+			log.Printf("vmessLink: server_port not found or not a number in addr: %+v", addr)
+			continue
 		}
-		if tls, ok := addr["tls"].(map[string]interface{}); ok && tls["enabled"].(bool) {
-			obj["tls"] = "tls"
-			if insecure, ok := tls["insecure"].(bool); ok && insecure {
-				obj["allowInsecure"] = 1
-			}
-			if sni, ok := tls["server_name"].(string); ok {
-				obj["sni"] = sni
-			}
-			if alpn, ok := tls["alpn"].([]interface{}); ok {
-				alpnList := make([]string, len(alpn))
-				for i, v := range alpn {
-					alpnList[i] = v.(string)
+		obj["port"] = uint(portFloat)
+		remark, ok := addr["remark"].(string)
+		if !ok {
+			log.Printf("vmessLink: remark not found or not a string in addr: %+v", addr)
+			remark = "" // Default to empty string if remark is missing
+		}
+		obj["ps"] = remark
+
+		if host, ok := trasportParams["host"]; ok && host != "" {
+			obj["host"] = host
+		}
+		if path, ok := trasportParams["path"]; ok && path != "" {
+			obj["path"] = path
+		}
+		if tls, ok := addr["tls"].(map[string]interface{}); ok && tls != nil {
+			if enabled, ok := tls["enabled"].(bool); ok && enabled {
+				obj["tls"] = "tls"
+				if insecure, ok := tls["insecure"].(bool); ok && insecure {
+					obj["allowInsecure"] = 1
 				}
-				obj["alpn"] = strings.Join(alpnList, ",")
-			}
-			if utls, ok := tls["utls"].(map[string]interface{}); ok {
-				obj["fp"], _ = utls["fingerprint"].(string)
+				if sni, ok := tls["server_name"].(string); ok {
+					obj["sni"] = sni
+				}
+				if alpn, ok := tls["alpn"].([]interface{}); ok {
+					alpnList := make([]string, len(alpn))
+					for i, v := range alpn {
+						if s, ok := v.(string); ok {
+							alpnList[i] = s
+						}
+					}
+					obj["alpn"] = strings.Join(alpnList, ",")
+				}
+				if utls, ok := tls["utls"].(map[string]interface{}); ok {
+					if fingerprint, ok := utls["fingerprint"].(string); ok {
+						obj["fp"] = fingerprint
+					}
+				}
 			}
 		} else {
 			obj["tls"] = "none"
 		}
 
-		jsonStr, _ := json.MarshalIndent(obj, "", "  ")
+		jsonStr, err := json.Marshal(obj) // Use Marshal instead of MarshalIndent for link generation
+		if err != nil {
+			log.Printf("vmessLink: failed to marshal VMess config object: %v", err)
+			continue
+		}
 
 		uri := fmt.Sprintf("vmess://%s", toBase64(jsonStr))
 		links = append(links, uri)
@@ -469,40 +774,54 @@ func vmessLink(
 }
 
 func toBase64(d []byte) string {
-	return base64.StdEncoding.EncodeToString([]byte(d))
+	return base64.StdEncoding.EncodeToString(d) // Removed redundant []byte(d)
 }
 
 func addParams(uri string, params map[string]string, remark string) string {
-	URL, _ := url.Parse(uri)
-	var q []string
+	URL, err := url.Parse(uri)
+	if err != nil {
+		log.Printf("addParams: failed to parse URI %s: %v", uri, err)
+		return uri // Return original URI if parsing fails
+	}
+	q := URL.Query() // Use URL.Query() to get a mutable copy of query parameters
 	for k, v := range params {
 		switch k {
 		case "mport", "alpn":
-			q = append(q, fmt.Sprintf("%s=%s", k, v))
+			q.Add(k, v)
 		default:
-			q = append(q, fmt.Sprintf("%s=%s", k, url.QueryEscape(v)))
+			q.Add(k, v)
 		}
 	}
-	URL.RawQuery = strings.Join(q, "&")
+	URL.RawQuery = q.Encode() // Encode the query parameters back to RawQuery
 	URL.Fragment = remark
 	return URL.String()
 }
 
 func getTransportParams(t interface{}) map[string]string {
 	params := map[string]string{}
-	trasport, _ := t.(map[string]interface{})
-	if transportType, ok := trasport["type"].(string); ok {
-		params["type"] = transportType
-	} else {
-		params["type"] = "tcp"
+	trasport, ok := t.(map[string]interface{})
+	if !ok {
+		log.Printf("getTransportParams: transport config is not a map: %+v", t)
+		params["type"] = "tcp" // Default to tcp
 		return params
 	}
+
+	transportType, ok := trasport["type"].(string)
+	if !ok {
+		log.Printf("getTransportParams: transport type not found or not a string in transport config: %+v", trasport)
+		params["type"] = "tcp" // Default to tcp
+		return params
+	}
+	params["type"] = transportType
+
 	switch params["type"] {
 	case "http":
 		if host, ok := trasport["host"].([]interface{}); ok {
 			var hosts []string
 			for _, v := range host {
-				hosts = append(hosts, v.(string))
+				if s, ok := v.(string); ok {
+					hosts = append(hosts, s)
+				}
 			}
 			params["host"] = strings.Join(hosts, ",")
 		}
@@ -534,13 +853,15 @@ func getTransportParams(t interface{}) map[string]string {
 }
 
 func getTlsParams(params *map[string]string, tls map[string]interface{}, insecureKey string) {
-	if reality, ok := tls["reality"].(map[string]interface{}); ok && reality["enabled"].(bool) {
-		(*params)["security"] = "reality"
-		if pbk, ok := reality["public_key"].(string); ok {
-			(*params)["pbk"] = pbk
-		}
-		if sid, ok := reality["short_id"].(string); ok {
-			(*params)["sid"] = sid
+	if reality, ok := tls["reality"].(map[string]interface{}); ok && reality != nil {
+		if enabled, ok := reality["enabled"].(bool); ok && enabled {
+			(*params)["security"] = "reality"
+			if pbk, ok := reality["public_key"].(string); ok {
+				(*params)["pbk"] = pbk
+			}
+			if sid, ok := reality["short_id"].(string); ok {
+				(*params)["sid"] = sid
+			}
 		}
 	} else {
 		(*params)["security"] = "tls"
@@ -551,8 +872,10 @@ func getTlsParams(params *map[string]string, tls map[string]interface{}, insecur
 			(*params)["disable_sni"] = "1"
 		}
 	}
-	if utls, ok := tls["utls"].(map[string]interface{}); ok {
-		(*params)["fp"], _ = utls["fingerprint"].(string)
+	if utls, ok := tls["utls"].(map[string]interface{}); ok && utls != nil {
+		if fingerprint, ok := utls["fingerprint"].(string); ok {
+			(*params)["fp"] = fingerprint
+		}
 	}
 	if sni, ok := tls["server_name"].(string); ok {
 		(*params)["sni"] = sni
@@ -560,7 +883,9 @@ func getTlsParams(params *map[string]string, tls map[string]interface{}, insecur
 	if alpn, ok := tls["alpn"].([]interface{}); ok {
 		alpnList := make([]string, len(alpn))
 		for i, v := range alpn {
-			alpnList[i] = v.(string)
+			if s, ok := v.(string); ok {
+				alpnList[i] = s
+			}
 		}
 		(*params)["alpn"] = strings.Join(alpnList, ",")
 	}
