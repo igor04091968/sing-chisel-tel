@@ -119,7 +119,9 @@ func handleCommand(ctx context.Context, b *bot.Bot, message *models.Message) {
 				"/restart\n" +
 				"/sublink <email>\n" +
 				"/list_users\n" +
-				"/backup\n\n" +
+				"/backup\n" +
+				"/add_in <type> <tag> <port>\n" +
+				"/add_out <json>\n\n" +
 				"Chisel Commands:\n" +
 				"/add_chisel_server <name> <port> [extra_args]\n" +
 				"/add_chisel_client <name> <server:port> <remotes> [extra_args]\n" +
