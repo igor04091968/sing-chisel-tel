@@ -182,6 +182,13 @@ func (s *MTProtoService) StopMTProtoProxy(id uint) error {
 	return nil
 }
 
+// GetMTProtoProxyByName retrieves a single MTProto Proxy configuration by its name.
+func (s *MTProtoService) GetMTProtoProxyByName(name string) (*model.MTProtoProxyConfig, error) {
+	var config model.MTProtoProxyConfig
+	err := s.db.Where("name = ?", name).First(&config).Error
+	return &config, err
+}
+
 // GetAllMTProtoProxies retrieves all MTProto Proxy configurations from the database.
 func (s *MTProtoService) GetAllMTProtoProxies() ([]model.MTProtoProxyConfig, error) {
 	var configs []model.MTProtoProxyConfig

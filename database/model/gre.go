@@ -9,5 +9,6 @@ type GreTunnel struct {
 	LocalAddress  string `json:"local_address"`                // Local physical IP address
 	RemoteAddress string `json:"remote_address"`               // Remote physical IP address
 	TunnelAddress string `json:"tunnel_address"`               // IP address and mask for the tunnel itself, e.g., "10.0.0.1/30"
+	InterfaceName string `json:"interface_name"`               // User-defined name for the interface
 	Status        string `json:"status" gorm:"default:'down'"` // Status of the tunnel, e.g., "up" or "down"
 }

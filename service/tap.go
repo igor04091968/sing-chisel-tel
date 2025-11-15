@@ -125,6 +125,13 @@ func (s *TapService) DeleteTapTunnel(id uint) error {
 	return nil
 }
 
+// GetTapTunnelByName retrieves a single TAP tunnel configuration by its name.
+func (s *TapService) GetTapTunnelByName(name string) (*model.TapTunnel, error) {
+	var config model.TapTunnel
+	err := s.db.Where("name = ?", name).First(&config).Error
+	return &config, err
+}
+
 // GetAllTapTunnels retrieves all TAP tunnel configurations from the database.
 func (s *TapService) GetAllTapTunnels() ([]model.TapTunnel, error) {
 	var configs []model.TapTunnel

@@ -109,6 +109,13 @@ func (s *GreService) DeleteGreTunnel(id uint) error {
 	return nil
 }
 
+// GetGreTunnelByName retrieves a single GRE tunnel configuration by its name.
+func (s *GreService) GetGreTunnelByName(name string) (*model.GreTunnel, error) {
+	var config model.GreTunnel
+	err := s.db.Where("name = ?", name).First(&config).Error
+	return &config, err
+}
+
 // GetAllGreTunnels retrieves all GRE tunnel configurations from the database.
 func (s *GreService) GetAllGreTunnels() ([]model.GreTunnel, error) {
 	var configs []model.GreTunnel

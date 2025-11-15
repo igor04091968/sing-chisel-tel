@@ -26,6 +26,9 @@ type APP struct {
 	statsService   *service.StatsService
 	serverService  *service.ServerService // New field for server service
 	chiselService  *service.ChiselService
+	mtprotoService *service.MTProtoService // Added
+	greService     *service.GreService     // Added
+	tapService     *service.TapService     // Added
 	webServer      *web.Server
 	subServer      *sub.Server
 	cronJob        *cronjob.CronJob
@@ -61,6 +64,9 @@ func (a *APP) Init() error {
 	a.subServer = sub.NewServer()
 
 	a.chiselService = service.NewChiselService()
+	a.mtprotoService = service.NewMTProtoService() // Added
+	a.greService = service.NewGreService()         // Added
+	a.tapService = service.NewTapService()         // Added
 	a.configService = service.NewConfigService(a.core, a.chiselService)
 
 	// --- Add default Chisel client config if none exists ---
@@ -269,5 +275,17 @@ func (a *APP) GetAllInbounds() ([]model.Inbound, error) {
 
 func (a *APP) GetAllOutbounds() ([]model.Outbound, error) {
     return a.configService.GetAllOutbounds()
+}
+
+func (a *APP) GetMTProtoService() *service.MTProtoService {
+	return a.mtprotoService
+}
+
+func (a *APP) GetGreService() *service.GreService {
+	return a.greService
+}
+
+func (a *APP) GetTapService() *service.TapService {
+	return a.tapService
 }
 

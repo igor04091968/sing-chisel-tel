@@ -23,6 +23,9 @@ type AppServices interface {
 	RestartApp()
 	GetConfigService() *service.ConfigService
 	GetChiselService() *service.ChiselService
+	GetMTProtoService() *service.MTProtoService // Added
+	GetGreService() *service.GreService         // Added
+	GetTapService() *service.TapService         // Added
 	GetFirstInboundId() (uint, error)
 	GetUserByEmail(email string) (*model.Client, error)
 	GetAllUsers() (*[]model.Client, error)
@@ -132,7 +135,26 @@ func handleCommand(ctx context.Context, b *bot.Bot, message *models.Message) {
 				"/list_chisel\n" +
 				"/remove_chisel <name>\n" +
 				"/start_chisel <name>\n" +
-				"/stop_chisel <name>",
+				"/stop_chisel <name>\n\n" +
+				"MTProto Proxy Commands:\n" +
+				"/add_mtproto <name> <port> <secret> [ad_tag]\n" +
+				"/list_mtproto\n" +
+				"/remove_mtproto <name>\n" +
+				"/start_mtproto <name>\n" +
+				"/stop_mtproto <name>\n" +
+				"/gen_mtproto_secret\n\n" +
+				"GRE Tunnel Commands:\n" +
+				"/add_gre <name> <local_ip> <remote_ip> [interface_name]\n" +
+				"/list_gre\n" +
+				"/remove_gre <name>\n" +
+				"/start_gre <name>\n" +
+				"/stop_gre <name>\n\n" +
+				"TAP Tunnel Commands:\n" +
+				"/add_tap <name> <ip_address> [mtu] [interface_name]\n" +
+				"/list_tap\n" +
+				"/remove_tap <name>\n" +
+				"/start_tap <name>\n" +
+				"/stop_tap <name>",
 		})
 	case "/adduser":
 		handleAddUser(ctx, b, message, args)
@@ -173,6 +195,41 @@ func handleCommand(ctx context.Context, b *bot.Bot, message *models.Message) {
 		handleListInbounds(ctx, b, message)
 	case "/list_outbounds":
 		handleListOutbounds(ctx, b, message)
+	// MTProto Proxy Commands
+	case "/add_mtproto":
+		handleAddMTProto(ctx, b, message, args)
+	case "/list_mtproto":
+		handleListMTProto(ctx, b, message)
+	case "/remove_mtproto":
+		handleRemoveMTProto(ctx, b, message, args)
+	case "/start_mtproto":
+		handleStartMTProto(ctx, b, message, args)
+	case "/stop_mtproto":
+		handleStopMTProto(ctx, b, message, args)
+	case "/gen_mtproto_secret":
+		handleGenerateMTProtoSecret(ctx, b, message)
+	// GRE Tunnel Commands
+	case "/add_gre":
+		handleAddGre(ctx, b, message, args)
+	case "/list_gre":
+		handleListGre(ctx, b, message)
+	case "/remove_gre":
+		handleRemoveGre(ctx, b, message, args)
+	case "/start_gre":
+		handleStartGre(ctx, b, message, args)
+	case "/stop_gre":
+		handleStopGre(ctx, b, message, args)
+	// TAP Tunnel Commands
+	case "/add_tap":
+		handleAddTap(ctx, b, message, args)
+	case "/list_tap":
+		handleListTap(ctx, b, message)
+	case "/remove_tap":
+		handleRemoveTap(ctx, b, message, args)
+	case "/start_tap":
+		handleStartTap(ctx, b, message, args)
+	case "/stop_tap":
+		handleStopTap(ctx, b, message, args)
 	default:
 		b.SendMessage(ctx, &bot.SendMessageParams{
 			ChatID: message.Chat.ID,
@@ -804,5 +861,479 @@ func handleListOutbounds(ctx context.Context, b *bot.Bot, message *models.Messag
 	}
 
 	b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: response.String()})
+}
+
+// MTProto Proxy Handlers
+func handleAddMTProto(ctx context.Context, b *bot.Bot, message *models.Message, args []string) {
+	if len(args) < 3 || len(args) > 4 {
+		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: "Usage: /add_mtproto <name> <port> <secret> [ad_tag]"})
+		return
+	}
+
+	name := args[0]
+	port, err := strconv.Atoi(args[1])
+	if err != nil {
+		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: "Invalid port number."})
+		return
+	}
+	secret := args[2]
+	adTag := ""
+	if len(args) == 4 {
+		adTag = args[3]
+	}
+
+	config := model.MTProtoProxyConfig{
+		Name:       name,
+		ListenPort: port,
+		Secret:     secret,
+		AdTag:      adTag,
+		Status:     "down", // Initially down
+	}
+
+	mtprotoService := services.GetMTProtoService()
+	if err := mtprotoService.CreateMTProtoProxy(&config); err != nil {
+		log.Printf("Error creating MTProto Proxy config: %v", err)
+		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: fmt.Sprintf("Error creating config: %v", err)})
+		return
+	}
+
+	b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: fmt.Sprintf("MTProto Proxy config '%s' created. Starting...", name)})
+
+	if err := mtprotoService.StartMTProtoProxy(&config); err != nil {
+		log.Printf("Error starting MTProto Proxy: %v", err)
+		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: fmt.Sprintf("Error starting proxy: %v", err)})
+		return
+	}
+
+	b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: fmt.Sprintf("MTProto Proxy '%s' started successfully on port %d.", name, port)})
+}
+
+func handleListMTProto(ctx context.Context, b *bot.Bot, message *models.Message) {
+	mtprotoService := services.GetMTProtoService()
+	configs, err := mtprotoService.GetAllMTProtoProxies()
+	if err != nil {
+		log.Printf("Error getting MTProto Proxy configs: %v", err)
+		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: "Error getting MTProto Proxy configs."})
+		return
+	}
+
+	if len(configs) == 0 {
+		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: "No MTProto Proxy services configured."})
+		return
+	}
+
+	var response strings.Builder
+	response.WriteString("Configured MTProto Proxy Services:\n")
+	for _, config := range configs {
+		response.WriteString(fmt.Sprintf("\n- Name: %s\n", config.Name))
+		response.WriteString(fmt.Sprintf("  Listen Port: %d\n", config.ListenPort))
+		response.WriteString(fmt.Sprintf("  Secret: %s\n", config.Secret))
+		if config.AdTag != "" {
+			response.WriteString(fmt.Sprintf("  Ad Tag: %s\n", config.AdTag))
+		}
+		response.WriteString(fmt.Sprintf("  Status: %s\n", config.Status))
+	}
+
+	b.SendMessage(ctx, &bot.SendMessageParams{
+		ChatID: message.Chat.ID,
+		Text:   response.String(),
+	})
+}
+
+func handleRemoveMTProto(ctx context.Context, b *bot.Bot, message *models.Message, args []string) {
+	if len(args) != 1 {
+		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: "Usage: /remove_mtproto <name>"})
+		return
+	}
+	name := args[0]
+	mtprotoService := services.GetMTProtoService()
+	config, err := mtprotoService.GetMTProtoProxyByName(name) // Assuming GetMTProtoProxyByName exists
+	if err != nil {
+		log.Printf("Error getting MTProto Proxy config by name %s: %v", name, err)
+		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: fmt.Sprintf("Config with name '%s' not found.", name)})
+		return
+	}
+
+	if config.Status == "up" {
+		if err := mtprotoService.StopMTProtoProxy(config.ID); err != nil {
+			log.Printf("Error stopping MTProto Proxy %s before removing: %v", name, err)
+			b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: fmt.Sprintf("Proxy '%s' was running, attempted to stop it before removal. It will be removed anyway.", name)})
+		} else {
+			b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: fmt.Sprintf("Proxy '%s' stopped.", name)})
+		}
+	}
+
+	if err := mtprotoService.DeleteMTProtoProxy(config.ID); err != nil {
+		log.Printf("Error deleting MTProto Proxy config %s: %v", name, err)
+		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: fmt.Sprintf("Error deleting config '%s': %v", name, err)})
+		return
+	}
+
+	b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: fmt.Sprintf("MTProto Proxy config '%s' removed successfully.", name)})
+}
+
+func handleStartMTProto(ctx context.Context, b *bot.Bot, message *models.Message, args []string) {
+	if len(args) != 1 {
+		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: "Usage: /start_mtproto <name>"})
+		return
+	}
+	name := args[0]
+	mtprotoService := services.GetMTProtoService()
+	config, err := mtprotoService.GetMTProtoProxyByName(name) // Assuming GetMTProtoProxyByName exists
+	if err != nil {
+		log.Printf("Error getting MTProto Proxy config by name %s: %v", name, err)
+		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: fmt.Sprintf("Config with name '%s' not found.", name)})
+		return
+	}
+
+	if config.Status == "up" {
+		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: fmt.Sprintf("MTProto Proxy '%s' is already running.", name)})
+		return
+	}
+
+	if err := mtprotoService.StartMTProtoProxy(config); err != nil {
+		log.Printf("Error starting MTProto Proxy %s: %v", name, err)
+		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: fmt.Sprintf("Error starting proxy '%s': %v", name, err)})
+		return
+	}
+
+	b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: fmt.Sprintf("MTProto Proxy '%s' started successfully.", name)})
+}
+
+func handleStopMTProto(ctx context.Context, b *bot.Bot, message *models.Message, args []string) {
+	if len(args) != 1 {
+		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: "Usage: /stop_mtproto <name>"})
+		return
+	}
+	name := args[0]
+	mtprotoService := services.GetMTProtoService()
+	config, err := mtprotoService.GetMTProtoProxyByName(name) // Assuming GetMTProtoProxyByName exists
+	if err != nil {
+		log.Printf("Error getting MTProto Proxy config by name %s: %v", name, err)
+		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: fmt.Sprintf("Config with name '%s' not found.", name)})
+		return
+	}
+
+	if config.Status == "down" {
+		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: fmt.Sprintf("MTProto Proxy '%s' is not running.", name)})
+		return
+	}
+
+	if err := mtprotoService.StopMTProtoProxy(config.ID); err != nil {
+		log.Printf("Error stopping MTProto Proxy %s: %v", name, err)
+		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: fmt.Sprintf("Error stopping proxy '%s': %v", name, err)})
+		return
+	}
+
+	b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: fmt.Sprintf("MTProto Proxy '%s' stopped successfully.", name)})
+}
+
+func handleGenerateMTProtoSecret(ctx context.Context, b *bot.Bot, message *models.Message) {
+	secret, err := service.GenerateMTProtoSecret()
+	if err != nil {
+		log.Printf("Error generating MTProto secret: %v", err)
+		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: fmt.Sprintf("Error generating secret: %v", err)})
+		return
+	}
+	b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: fmt.Sprintf("Generated MTProto Secret: `%s`", secret)})
+}
+
+// GRE Tunnel Handlers
+func handleAddGre(ctx context.Context, b *bot.Bot, message *models.Message, args []string) {
+	if len(args) < 3 || len(args) > 4 {
+		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: "Usage: /add_gre <name> <local_ip> <remote_ip> [interface_name]"})
+		return
+	}
+
+	name := args[0]
+	localIP := args[1]
+	remoteIP := args[2]
+	interfaceName := ""
+	if len(args) == 4 {
+		interfaceName = args[3]
+	}
+
+	config := model.GreTunnel{
+		Name:          name,
+		LocalAddress:  localIP,
+		RemoteAddress: remoteIP,
+		InterfaceName: interfaceName,
+		Status:        "down", // Initially down
+	}
+
+	greService := services.GetGreService()
+	if err := greService.CreateGreTunnel(&config); err != nil {
+		log.Printf("Error creating GRE Tunnel config: %v", err)
+		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: fmt.Sprintf("Error creating config: %v", err)})
+		return
+	}
+
+	b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: fmt.Sprintf("GRE Tunnel config '%s' created and started successfully.", name)})
+}
+
+func handleListGre(ctx context.Context, b *bot.Bot, message *models.Message) {
+	greService := services.GetGreService()
+	configs, err := greService.GetAllGreTunnels()
+	if err != nil {
+		log.Printf("Error getting GRE Tunnel configs: %v", err)
+		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: "Error getting GRE Tunnel configs."})
+		return
+	}
+
+	if len(configs) == 0 {
+		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: "No GRE Tunnel services configured."})
+		return
+	}
+
+	var response strings.Builder
+	response.WriteString("Configured GRE Tunnel Services:\n")
+	for _, config := range configs {
+		response.WriteString(fmt.Sprintf("\n- Name: %s\n", config.Name))
+		response.WriteString(fmt.Sprintf("  Local IP: %s\n", config.LocalAddress))
+		response.WriteString(fmt.Sprintf("  Remote IP: %s\n", config.RemoteAddress))
+		response.WriteString(fmt.Sprintf("  Interface Name: %s\n", config.InterfaceName))
+		response.WriteString(fmt.Sprintf("  Status: %s\n", config.Status))
+	}
+
+	b.SendMessage(ctx, &bot.SendMessageParams{
+		ChatID: message.Chat.ID,
+		Text:   response.String(),
+	})
+}
+
+func handleRemoveGre(ctx context.Context, b *bot.Bot, message *models.Message, args []string) {
+	if len(args) != 1 {
+		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: "Usage: /remove_gre <name>"})
+		return
+	}
+	name := args[0]
+	greService := services.GetGreService()
+	config, err := greService.GetGreTunnelByName(name)
+	if err != nil {
+		log.Printf("Error getting GRE Tunnel config by name %s: %v", name, err)
+		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: fmt.Sprintf("Config with name '%s' not found.", name)})
+		return
+	}
+
+	if err := greService.DeleteGreTunnel(config.ID); err != nil {
+		log.Printf("Error deleting GRE Tunnel config %s: %v", name, err)
+		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: fmt.Sprintf("Error deleting config '%s': %v", name, err)})
+		return
+	}
+
+	b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: fmt.Sprintf("GRE Tunnel config '%s' removed successfully.", name)})
+}
+
+func handleStartGre(ctx context.Context, b *bot.Bot, message *models.Message, args []string) {
+	if len(args) != 1 {
+		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: "Usage: /start_gre <name>"})
+		return
+	}
+	name := args[0]
+	greService := services.GetGreService()
+	config, err := greService.GetGreTunnelByName(name)
+	if err != nil {
+		log.Printf("Error getting GRE Tunnel config by name %s: %v", name, err)
+		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: fmt.Sprintf("Config with name '%s' not found.", name)})
+		return
+	}
+
+	if config.Status == "up" {
+		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: fmt.Sprintf("GRE Tunnel '%s' is already running.", name)})
+		return
+	}
+
+	// Re-create the tunnel
+	if err := greService.CreateGreTunnel(config); err != nil {
+		log.Printf("Error starting GRE Tunnel %s: %v", name, err)
+		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: fmt.Sprintf("Error starting tunnel '%s': %v", name, err)})
+		return
+	}
+
+	b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: fmt.Sprintf("GRE Tunnel '%s' started successfully.", name)})
+}
+
+func handleStopGre(ctx context.Context, b *bot.Bot, message *models.Message, args []string) {
+	if len(args) != 1 {
+		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: "Usage: /stop_gre <name>"})
+		return
+	}
+	name := args[0]
+	greService := services.GetGreService()
+	config, err := greService.GetGreTunnelByName(name)
+	if err != nil {
+		log.Printf("Error getting GRE Tunnel config by name %s: %v", name, err)
+		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: fmt.Sprintf("Config with name '%s' not found.", name)})
+		return
+	}
+
+	if config.Status == "down" {
+		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: fmt.Sprintf("GRE Tunnel '%s' is not running.", name)})
+		return
+	}
+
+	// Delete the tunnel to stop it
+	if err := greService.DeleteGreTunnel(config.ID); err != nil {
+		log.Printf("Error stopping GRE Tunnel %s: %v", name, err)
+		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: fmt.Sprintf("Error stopping tunnel '%s': %v", name, err)})
+		return
+	}
+
+	b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: fmt.Sprintf("GRE Tunnel '%s' stopped successfully.", name)})
+}
+
+// TAP Tunnel Handlers
+func handleAddTap(ctx context.Context, b *bot.Bot, message *models.Message, args []string) {
+	if len(args) < 2 || len(args) > 4 {
+		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: "Usage: /add_tap <name> <ip_address> [mtu] [interface_name]"})
+		return
+	}
+
+	name := args[0]
+	ipAddress := args[1]
+	mtu := 0 // Default MTU
+	interfaceName := ""
+
+	if len(args) >= 3 {
+		if val, err := strconv.Atoi(args[2]); err == nil {
+			mtu = val
+		} else {
+			// If it's not an int, assume it's interface_name
+			interfaceName = args[2]
+		}
+	}
+	if len(args) == 4 {
+		interfaceName = args[3]
+	}
+
+	config := model.TapTunnel{
+		Name:          name,
+		LocalAddress:  ipAddress,
+		MTU:           mtu,
+		InterfaceName: interfaceName,
+		Status:        "down", // Initially down
+	}
+
+	tapService := services.GetTapService()
+	if err := tapService.CreateTapTunnel(&config); err != nil {
+		log.Printf("Error creating TAP Tunnel config: %v", err)
+		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: fmt.Sprintf("Error creating config: %v", err)})
+		return
+	}
+
+	b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: fmt.Sprintf("TAP Tunnel config '%s' created and started successfully.", name)})
+}
+
+func handleListTap(ctx context.Context, b *bot.Bot, message *models.Message) {
+	tapService := services.GetTapService()
+	configs, err := tapService.GetAllTapTunnels()
+	if err != nil {
+		log.Printf("Error getting TAP Tunnel configs: %v", err)
+		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: "Error getting TAP Tunnel configs."})
+		return
+	}
+
+	if len(configs) == 0 {
+		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: "No TAP Tunnel services configured."})
+		return
+	}
+
+	var response strings.Builder
+	response.WriteString("Configured TAP Tunnel Services:\n")
+	for _, config := range configs {
+		response.WriteString(fmt.Sprintf("\n- Name: %s\n", config.Name))
+		response.WriteString(fmt.Sprintf("  Local IP: %s\n", config.LocalAddress))
+		if config.MTU > 0 {
+			response.WriteString(fmt.Sprintf("  MTU: %d\n", config.MTU))
+		}
+		response.WriteString(fmt.Sprintf("  Interface Name: %s\n", config.InterfaceName))
+		response.WriteString(fmt.Sprintf("  Status: %s\n", config.Status))
+	}
+
+	b.SendMessage(ctx, &bot.SendMessageParams{
+		ChatID: message.Chat.ID,
+		Text:   response.String(),
+	})
+}
+
+func handleRemoveTap(ctx context.Context, b *bot.Bot, message *models.Message, args []string) {
+	if len(args) != 1 {
+		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: "Usage: /remove_tap <name>"})
+		return
+	}
+	name := args[0]
+	tapService := services.GetTapService()
+	config, err := tapService.GetTapTunnelByName(name)
+	if err != nil {
+		log.Printf("Error getting TAP Tunnel config by name %s: %v", name, err)
+		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: fmt.Sprintf("Config with name '%s' not found.", name)})
+		return
+	}
+
+	if err := tapService.DeleteTapTunnel(config.ID); err != nil {
+		log.Printf("Error deleting TAP Tunnel config %s: %v", name, err)
+		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: fmt.Sprintf("Error deleting config '%s': %v", name, err)})
+		return
+	}
+
+	b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: fmt.Sprintf("TAP Tunnel config '%s' removed successfully.", name)})
+}
+
+func handleStartTap(ctx context.Context, b *bot.Bot, message *models.Message, args []string) {
+	if len(args) != 1 {
+		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: "Usage: /start_tap <name>"})
+		return
+	}
+	name := args[0]
+	tapService := services.GetTapService()
+	config, err := tapService.GetTapTunnelByName(name)
+	if err != nil {
+		log.Printf("Error getting TAP Tunnel config by name %s: %v", name, err)
+		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: fmt.Sprintf("Config with name '%s' not found.", name)})
+		return
+	}
+
+	if config.Status == "up" {
+		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: fmt.Sprintf("TAP Tunnel '%s' is already running.", name)})
+		return
+	}
+
+	// Re-create the tunnel
+	if err := tapService.CreateTapTunnel(config); err != nil {
+		log.Printf("Error starting TAP Tunnel %s: %v", name, err)
+		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: fmt.Sprintf("Error starting tunnel '%s': %v", name, err)})
+		return
+	}
+
+	b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: fmt.Sprintf("TAP Tunnel '%s' started successfully.", name)})
+}
+
+func handleStopTap(ctx context.Context, b *bot.Bot, message *models.Message, args []string) {
+	if len(args) != 1 {
+		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: "Usage: /stop_tap <name>"})
+		return
+	}
+	name := args[0]
+	tapService := services.GetTapService()
+	config, err := tapService.GetTapTunnelByName(name)
+	if err != nil {
+		log.Printf("Error getting TAP Tunnel config by name %s: %v", name, err)
+		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: fmt.Sprintf("Config with name '%s' not found.", name)})
+		return
+	}
+
+	if config.Status == "down" {
+		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: fmt.Sprintf("TAP Tunnel '%s' is not running.", name)})
+		return
+	}
+
+	// Delete the tunnel to stop it
+	if err := tapService.DeleteTapTunnel(config.ID); err != nil {
+		log.Printf("Error stopping TAP Tunnel %s: %v", name, err)
+		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: fmt.Sprintf("Error stopping tunnel '%s': %v", name, err)})
+		return
+	}
+
+	b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: fmt.Sprintf("TAP Tunnel '%s' stopped successfully.", name)})
 }
 
