@@ -244,7 +244,7 @@ export default {
     validate() {
       if (this.inbound == undefined) return false
       if (this.inbound.tag == "") return false
-      if (this.inbound.listen_port > 65535 || this.inbound.listen_port < 1) return false
+      if (this.inbound.listen_port === undefined || this.inbound.listen_port > 65535 || this.inbound.listen_port < 1) return false
       if (this.OnlyTLS.includes(this.inbound.type) && this.inbound.tls_id == 0) return false
       return true
     },

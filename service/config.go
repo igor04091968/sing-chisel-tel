@@ -25,6 +25,7 @@ type ConfigService struct {
 	OutboundService
 	ServicesService
 	EndpointService
+	ChiselService
 }
 
 type SingBoxConfig struct {
@@ -39,9 +40,11 @@ type SingBoxConfig struct {
 	Experimental json.RawMessage   `json:"experimental"`
 }
 
-func NewConfigService(core *core.Core) *ConfigService {
+func NewConfigService(core *core.Core, chiselService *ChiselService) *ConfigService {
 	corePtr = core
-	return &ConfigService{}
+	return &ConfigService{
+		ChiselService: *chiselService,
+	}
 }
 
 func (s *ConfigService) GetConfig(data string) (*SingBoxConfig, error) {
