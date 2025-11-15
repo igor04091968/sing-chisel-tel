@@ -134,3 +134,15 @@ This guide provides step-by-step instructions for an AI agent to build the S-UI 
 1.  **Navigate to GitHub Actions:** In a web browser, go to the "Actions" tab of the repository.
 2.  **Select Workflow Run:** Click on the successful "Release S-UI" workflow run.
 3.  **Download Artifacts:** Scroll down to the "Artifacts" section. The compiled `tar.gz` files for various platforms will be available for download.
+
+## 6. Chisel Client Configuration and Management
+
+The `s-ui` application now includes enhanced functionality for managing Chisel client configurations:
+
+*   **Database-driven Configuration**: Chisel client configurations are stored in the application's database.
+*   **Automatic Startup**: On `s-ui` startup, the application automatically checks for and starts any configured Chisel clients.
+*   **Default Configuration**: If no Chisel client configuration exists in the database, a default placeholder named `default-chisel-client` is automatically created. This allows for easy initial setup and subsequent modification via the web panel or Telegram bot.
+*   **Telegram Bot Command**: A new Telegram bot command, `/delete_all_chisel`, has been added. This command allows for the complete removal of all Chisel server and client configurations from the database, including stopping any running instances.
+*   **Chisel Client Args Parsing**: The internal parsing logic for Chisel client arguments (`Args` field) has been improved to correctly extract authentication arguments (`--auth`) and TLS flags (`--tls`) from the remote strings, and assign them to the appropriate fields in `chclient.Config`.
+
+**AI Agent Action**: When assisting with Chisel client setup, guide the user to either modify the `default-chisel-client` via the web panel or Telegram bot, or to create new Chisel client configurations as needed. If troubleshooting Chisel client startup, ensure the `Args` field is correctly formatted and that the server address and port are accurate.

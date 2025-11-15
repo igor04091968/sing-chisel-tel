@@ -39,13 +39,37 @@ The Chisel service has been refactored to embed the `jpillora/chisel` library di
 *   **In-process Execution**: Chisel servers and clients are now run as Go goroutines within the `s-ui` application.
 *   **Lifecycle Management**: The `service.ChiselService` now manages the lifecycle of these in-process Chisel instances using `context.WithCancel` for graceful shutdown.
 *   **PID Field Repurposed**: The `PID` field in the `model.ChiselConfig` database entry is no longer an operating system process ID. It now serves as a simple flag (`1` for running, `0` for stopped) to indicate the service's intended state.
-*   **Telegram Bot Command Updates**: The Telegram bot commands (`/add_chisel_server`, `/add_chisel_client`, `/start_chisel`, `/stop_chisel`, `/list_chisel`, `/remove_chisel`) have been updated to reflect these changes. OS-level process checks have been removed, and the status is now derived from the internal state managed by `service.ChiselService`.
+*   **Telegram Bot Command Updates**: The Telegram bot commands (`/add_chisel_server`, `/add_chisel_client`, `/start_chisel`, `/stop_chisel`, `/list_chisel`, `/remove_chisel`, `/delete_all_chisel`) have been updated to reflect these changes. OS-level process checks have been removed, and the status is now derived from the internal state managed by `service.ChiselService`.
 *   **Improved Error Logging**: The `StartChisel` function now captures and logs `stderr` output from the Chisel library, providing better diagnostics if a Chisel service fails to start or exits prematurely.
+*   **Database-driven Configuration & Auto-start**: Chisel client configurations are now stored in the `s-ui` database. On application startup, `s-ui` checks for existing Chisel client configurations and automatically starts any that are not running. If no Chisel client configuration exists, a default placeholder (`default-chisel-client`) is created in the database.
+*   **Chisel Client Args Parsing Fix**: The parsing of the `Args` field for Chisel clients has been corrected to properly extract authentication arguments (`--auth`) and TLS flags (`--tls`) from the remote strings, and assign them to the appropriate fields in `chclient.Config`, resolving issues with malformed remote errors.
 
 **Impact on Development:**
 
 *   Developers no longer need to ensure the `chisel` executable is present in the system's `$PATH`.
 *   Debugging Chisel-related issues can now leverage `s-ui`'s internal logging.
+*   Chisel client configurations are now dynamic and manageable via the web panel and Telegram bot.
+
+## 2.2 Chisel Web Panel Integration
+
+The Chisel service management has been integrated into the web panel, allowing users to add, edit, and manage Chisel server and client configurations directly from the UI.
+
+**Key Changes:**
+
+*   **Backend API**: New API endpoints have been exposed to perform CRUD operations on Chisel configurations, leveraging the existing `service.ChiselService`.
+    *   The `ApiService.Save` method now handles `chisel` objects.
+    *   The `ApiService.LoadData` and `ApiService.LoadPartialData` methods now include Chisel configurations.
+*   **Frontend UI**:
+    *   A new `CHISEL` service type has been added to `frontend/src/types/services.ts`.
+    *   A dedicated Vue component (`frontend/src/components/services/Chisel.vue`) has been created for configuring Chisel services.
+    *   The `frontend/src/layouts/modals/Service.vue` component now dynamically renders the `Chisel.vue` component when a Chisel service is being added or edited.
+*   **Type System Enhancements**:
+    *   The `listen_port` property in `frontend/src/types/inbounds.ts` (within the `Listen` interface) has been made optional to accommodate services that may not require a listening port (e.g., Chisel clients).
+    *   Type casting and imports were adjusted in frontend Vue components to ensure TypeScript compatibility.
+
+**Impact on Development:**
+
+*   Developers can now extend the web panel to manage other services by following a similar pattern of backend API exposure and frontend component integration.
 
 ## 3. Bot Commands
 

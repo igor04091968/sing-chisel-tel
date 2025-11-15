@@ -109,7 +109,8 @@ export default {
 
       // save data
       this.loading = true
-      const success = await Data().save("services", this.$props.id == 0 ? "new" : "edit", this.srv)
+      const objectType = this.srv.type === SrvTypes.CHISEL ? "chisel" : "services";
+      const success = await Data().save(objectType, this.$props.id == 0 ? "new" : "edit", this.srv)
       if (success) this.closeModal()
       this.loading = false
     },
