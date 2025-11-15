@@ -274,3 +274,100 @@ For the full functionality of GRE, TAP, and MTProto Proxy management, the `s-ui`
 -   **MTProto Proxy (External Process):** While the `mtg` binary itself might not always need `root` (e.g., if listening on a non-privileged port > 1024), `s-ui`'s ability to manage external processes and potentially bind `mtg` to privileged ports (like 443) might necessitate running `s-ui` with elevated privileges.
 
 **Recommendation:** It is recommended to run the `sui` executable with `root` privileges or configure appropriate Linux capabilities (e.g., `sudo setcap cap_net_admin,cap_net_bind_service=+ep /path/to/sui`) if fine-grained control is desired.
+
+## 17. Telegram Bot Commands for Advanced Services
+
+The Telegram bot has been enhanced with new commands to manage MTProto Proxy, GRE Tunnels, and TAP Tunnels.
+
+### MTProto Proxy Commands
+
+These commands allow you to manage MTProto proxies, which are run as external `mtg` processes.
+
+*   `/add_mtproto <name> <port> <secret> [ad_tag]`
+    *   **Description:** Creates and starts a new MTProto proxy.
+    *   **Parameters:**
+        *   `<name>`: Unique name for the proxy.
+        *   `<port>`: Port on which the proxy will listen.
+        *   `<secret>`: 32-character hexadecimal MTProto secret.
+        *   `[ad_tag]` (optional): Tag for advertising Telegram channels.
+    *   **Example:** `/add_mtproto myproxy 443 aabbccddeeff11223344556677889900 mychannel`
+*   `/list_mtproto`
+    *   **Description:** Lists all configured MTProto proxies and their status.
+*   `/remove_mtproto <name>`
+    *   **Description:** Stops and removes an MTProto proxy by name.
+    *   **Parameters:**
+        *   `<name>`: Name of the proxy to remove.
+    *   **Example:** `/remove_mtproto myproxy`
+*   `/start_mtproto <name>`
+    *   **Description:** Starts a stopped MTProto proxy by name.
+    *   **Parameters:**
+        *   `<name>`: Name of the proxy to start.
+    *   **Example:** `/start_mtproto myproxy`
+*   `/stop_mtproto <name>`
+    *   **Description:** Stops a running MTProto proxy by name.
+    *   **Parameters:**
+        *   `<name>`: Name of the proxy to stop.
+    *   **Example:** `/stop_mtproto myproxy`
+*   `/gen_mtproto_secret`
+    *   **Description:** Generates a new 32-character hexadecimal MTProto secret.
+
+### GRE Tunnel Commands
+
+These commands allow you to manage kernel-level GRE tunnels. `s-ui` must be run with `root` privileges for these to work.
+
+*   `/add_gre <name> <local_ip> <remote_ip> <tunnel_address> [interface_name]`
+    *   **Description:** Creates and starts a new GRE tunnel.
+    *   **Parameters:**
+        *   `<name>`: Unique name for the tunnel.
+        *   `<local_ip>`: Local physical IP address.
+        *   `<remote_ip>`: Remote physical IP address.
+        *   `<tunnel_address>`: IP address and mask for the tunnel itself (e.g., "10.0.0.1/30").
+        *   `[interface_name]` (optional): Name of the network interface to create (e.g., `gre0`). If omitted, one will be generated.
+    *   **Example:** `/add_gre gretun0 192.168.1.100 203.0.113.5 10.0.0.1/30`
+*   `/list_gre`
+    *   **Description:** Lists all configured GRE tunnels and their status.
+*   `/remove_gre <name>`
+    *   **Description:** Removes a GRE tunnel by name.
+    *   **Parameters:**
+        *   `<name>`: Name of the tunnel to remove.
+    *   **Example:** `/remove_gre gretun0`
+*   `/start_gre <name>`
+    *   **Description:** Starts a stopped GRE tunnel by name.
+    *   **Parameters:**
+        *   `<name>`: Name of the tunnel to start.
+    *   **Example:** `/start_gre gretun0`
+*   `/stop_gre <name>`
+    *   **Description:** Stops a running GRE tunnel by name.
+    *   **Parameters:**
+        *   `<name>`: Name of the tunnel to stop.
+    *   **Example:** `/stop_gre gretun0`
+
+### TAP Tunnel Commands
+
+These commands allow you to manage TAP interfaces. `s-ui` must be run with `root` privileges for these to work.
+
+*   `/add_tap <name> <ip_address> [mtu] [interface_name]`
+    *   **Description:** Creates and starts a new TAP interface.
+    *   **Parameters:**
+        *   `<name>`: Unique name for the TAP interface.
+        *   `<ip_address>`: IP address and mask for the TAP interface (e.g., "192.168.50.1/24").
+        *   `[mtu]` (optional): Maximum Transmission Unit (MTU) for the interface. Defaults to 1500.
+        *   `[interface_name]` (optional): Name of the network interface to create (e.g., `tap0`). If omitted, one will be generated.
+    *   **Example:** `/add_tap tap0 192.168.50.1/24 1420`
+*   `/list_tap`
+    *   **Description:** Lists all configured TAP interfaces and their status.
+*   `/remove_tap <name>`
+    *   **Description:** Removes a TAP interface by name.
+    *   **Parameters:**
+        *   `<name>`: Name of the TAP interface to remove.
+    *   **Example:** `/remove_tap tap0`
+*   `/start_tap <name>`
+    *   **Description:** Starts a stopped TAP interface by name.
+    *   **Parameters:**
+        *   `<name>`: Name of the TAP interface to start.
+    *   **Example:** `/start_tap tap0`
+*   `/stop_tap <name>`
+    *   **Description:** Stops a running TAP interface by name.
+    *   **Parameters:**
+        *   `<name>`: Name of the TAP interface to stop.
+    *   **Example:** `/stop_tap tap0`

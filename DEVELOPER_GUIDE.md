@@ -38,7 +38,7 @@ The Chisel service has been refactored to embed the `jpillora/chisel` library di
 
 *   **In-process Execution**: Chisel servers and clients are now run as Go goroutines within the `s-ui` application.
 *   **Lifecycle Management**: The `service.ChiselService` now manages the lifecycle of these in-process Chisel instances using `context.WithCancel` for graceful shutdown.
-*   **PID Field Repurposed**: The `PID` field in the `model.ChiselConfig` database entry is no longer an operating system process ID. It now serves as a simple flag (`1` for running, `0` for stopped) to indicate the service's intended state.
+*   **PID Field Repurposed**: The `PID` field in the `model.ChiselConfig` database entry is no longer an operating system process ID. It now serves as a simple flag (`1` for running, `0` for stopped) to indicate the service's intended state. The logic for updating this PID has been refined to ensure it accurately reflects the running status of the Chisel client/server, preventing false positives in status checks.
 *   **Telegram Bot Command Updates**: The Telegram bot commands (`/add_chisel_server`, `/add_chisel_client`, `/start_chisel`, `/stop_chisel`, `/list_chisel`, `/remove_chisel`, `/delete_all_chisel`) have been updated to reflect these changes. OS-level process checks have been removed, and the status is now derived from the internal state managed by `service.ChiselService`.
 *   **Improved Error Logging**: The `StartChisel` function now captures and logs `stderr` output from the Chisel library, providing better diagnostics if a Chisel service fails to start or exits prematurely.
 *   **Database-driven Configuration & Auto-start**: Chisel client configurations are now stored in the `s-ui` database. On application startup, `s-ui` checks for existing Chisel client configurations and automatically starts any that are not running. If no Chisel client configuration exists, a default placeholder (`default-chisel-client`) is created in the database.
@@ -71,25 +71,102 @@ The Chisel service management has been integrated into the web panel, allowing u
 
 *   Developers can now extend the web panel to manage other services by following a similar pattern of backend API exposure and frontend component integration.
 
-## 3. Bot Commands
+## 3.1 Telegram Bot Commands for Advanced Services
 
-The bot supports a variety of commands for managing the 's-ui' application.
+The Telegram bot has been enhanced with new commands to manage MTProto Proxy, GRE Tunnels, and TAP Tunnels.
 
-| Command                               | Description                                                                                             |
-| ------------------------------------- | ------------------------------------------------------------------------------------------------------- |
-| '/start'                              | Displays a welcome message.                                                                             |
-| '/help'                               | Lists all available commands.                                                                           |
-| '/adduser <email> <traffic_gb> [tag]' | Adds a new user with a specified traffic limit. An optional inbound tag can be provided.                |
-| '/deluser <email>'                    | Deletes a user.                                                                                         |
-| '/stats'                              | Shows online statistics.                                                                                |
-| '/logs'                               | Displays application logs.                                                                              |
-| '/restart'                            | Performs a "hot restart" of the application's services.                                                 |
-| '/sublink <email>'                    | Generates subscription links for a user.                                                                |
-| '/add_in <type> <tag> <port>'         | Creates a new inbound interface.                                                                        |
-| '/add_out <json>'                     | Creates a new outbound interface (requires a full JSON configuration).                                  |
-| '/list_users'                         | Lists all users.                                                                                        |
-| '/setup_service'                      | Provides instructions for setting up 's-ui' as a 'systemd' service.                                     |
-| '/help_devel'                         | Displays a detailed help message for developers, including troubleshooting information.                 |
+### MTProto Proxy Commands
+
+These commands allow you to manage MTProto proxies, which are run as external `mtg` processes.
+
+*   `/add_mtproto <name> <port> <secret> [ad_tag]`
+    *   **Description:** Creates and starts a new MTProto proxy.
+    *   **Parameters:**
+        *   `<name>`: Unique name for the proxy.
+        *   `<port>`: Port on which the proxy will listen.
+        *   `<secret>`: 32-character hexadecimal MTProto secret.
+        *   `[ad_tag]` (optional): Tag for advertising Telegram channels.
+    *   **Example:** `/add_mtproto myproxy 443 aabbccddeeff11223344556677889900 mychannel`
+*   `/list_mtproto`
+    *   **Description:** Lists all configured MTProto proxies and their status.
+*   `/remove_mtproto <name>`
+    *   **Description:** Stops and removes an MTProto proxy by name.
+    *   **Parameters:**
+        *   `<name>`: Name of the proxy to remove.
+    *   **Example:** `/remove_mtproto myproxy`
+*   `/start_mtproto <name>`
+    *   **Description:** Starts a stopped MTProto proxy by name.
+    *   **Parameters:**
+        *   `<name>`: Name of the proxy to start.
+    *   **Example:** `/start_mtproto myproxy`
+*   `/stop_mtproto <name>`
+    *   **Description:** Stops a running MTProto proxy by name.
+    *   **Parameters:**
+        *   `<name>`: Name of the proxy to stop.
+    *   **Example:** `/stop_mtproto myproxy`
+*   `/gen_mtproto_secret`
+    *   **Description:** Generates a new 32-character hexadecimal MTProto secret.
+
+### GRE Tunnel Commands
+
+These commands allow you to manage kernel-level GRE tunnels. `s-ui` must be run with `root` privileges for these to work.
+
+*   `/add_gre <name> <local_ip> <remote_ip> <tunnel_address> [interface_name]`
+    *   **Description:** Creates and starts a new GRE tunnel.
+    *   **Parameters:**
+        *   `<name>`: Unique name for the tunnel.
+        *   `<local_ip>`: Local physical IP address.
+        *   `<remote_ip>`: Remote physical IP address.
+        *   `<tunnel_address>`: IP address and mask for the tunnel itself (e.g., "10.0.0.1/30").
+        *   `[interface_name]` (optional): Name of the network interface to create (e.g., `gre0`). If omitted, one will be generated.
+    *   **Example:** `/add_gre gretun0 192.168.1.100 203.0.113.5 10.0.0.1/30`
+*   `/list_gre`
+    *   **Description:** Lists all configured GRE tunnels and their status.
+*   `/remove_gre <name>`
+    *   **Description:** Removes a GRE tunnel by name.
+    *   **Parameters:**
+        *   `<name>`: Name of the tunnel to remove.
+    *   **Example:** `/remove_gre gretun0`
+*   `/start_gre <name>`
+    *   **Description:** Starts a stopped GRE tunnel by name.
+    *   **Parameters:**
+        *   `<name>`: Name of the tunnel to start.
+    *   **Example:** `/start_gre gretun0`
+*   `/stop_gre <name>`
+    *   **Description:** Stops a running GRE tunnel by name.
+    *   **Parameters:**
+        *   `<name>`: Name of the tunnel to stop.
+    *   **Example:** `/stop_gre gretun0`
+
+### TAP Tunnel Commands
+
+These commands allow you to manage TAP interfaces. `s-ui` must be run with `root` privileges for these to work.
+
+*   `/add_tap <name> <ip_address> [mtu] [interface_name]`
+    *   **Description:** Creates and starts a new TAP interface.
+    *   **Parameters:**
+        *   `<name>`: Unique name for the TAP interface.
+        *   `<ip_address>`: IP address and mask for the TAP interface (e.g., "192.168.50.1/24").
+        *   `[mtu]` (optional): Maximum Transmission Unit (MTU) for the interface. Defaults to 1500.
+        *   `[interface_name]` (optional): Name of the network interface to create (e.g., `tap0`). If omitted, one will be generated.
+    *   **Example:** `/add_tap tap0 192.168.50.1/24 1420`
+*   `/list_tap`
+    *   **Description:** Lists all configured TAP interfaces and their status.
+*   `/remove_tap <name>`
+    *   **Description:** Removes a TAP interface by name.
+    *   **Parameters:**
+        *   `<name>`: Name of the TAP interface to remove.
+    *   **Example:** `/remove_tap tap0`
+*   `/start_tap <name>`
+    *   **Description:** Starts a stopped TAP interface by name.
+    *   **Parameters:**
+        *   `<name>`: Name of the TAP interface to start.
+    *   **Example:** `/start_tap tap0`
+*   `/stop_tap <name>`
+    *   **Description:** Stops a running TAP interface by name.
+    *   **Parameters:**
+        *   `<name>`: Name of the TAP interface to stop.
+    *   **Example:** `/stop_tap tap0`
 
 ## 4. The "Hot Restart" Mechanism
 

@@ -119,102 +119,131 @@ func (s *ChiselService) StartChisel(config *model.ChiselConfig) error {
 	ctx, cancel := context.WithCancel(context.Background())
 	s.activeServices[config.ID] = cancel
 
-	go func() {
+	var (
+		chiselClient *chclient.Client
+		chiselServer *chserver.Server
+		err          error
+	)
+	args := strings.Fields(config.Args)
+
+	if config.Mode == "client" {
+		remotes := []string{}
+		auth := ""
+		skipVerify := false
+
+		i := 0
+		for i < len(args) {
+			arg := args[i]
+			if arg == "--auth" && i+1 < len(args) {
+				auth = args[i+1]
+				i += 2
+			} else if arg == "--tls-skip-verify" || arg == "--tls" {
+				skipVerify = true
+				i++
+			} else {
+				remotes = append(remotes, arg)
+				i++
+			}
+		}
+
+		serverURL := fmt.Sprintf("%s:%d", config.ServerAddress, config.ServerPort)
+		if skipVerify {
+			serverURL = "https://" + serverURL
+		}
+
+		clientConfig := &chclient.Config{
+			Remotes:   remotes,
+			Auth:      auth,
+			Server:    serverURL,
+			KeepAlive: 25 * time.Second,
+			Headers:   http.Header{},
+			TLS: chclient.TLSConfig{
+				SkipVerify: skipVerify,
+				ServerName: config.ServerAddress,
+			},
+		}
+
+		chiselClient, err = chclient.NewClient(clientConfig)
+		if err != nil {
+			cancel()
+			delete(s.activeServices, config.ID)
+			return fmt.Errorf("failed to create Chisel client '%s': %w", config.Name, err)
+		}
+	} else { // server
+		serverConfig := &chserver.Config{
+			Reverse:   false,
+			KeepAlive: 25 * time.Second,
+		}
+		for i, arg := range args {
+			switch arg {
+			case "--reverse":
+				serverConfig.Reverse = true
+			case "--auth":
+				if i+1 < len(args) {
+					serverConfig.Auth = args[i+1]
+				}
+			}
+		}
+
+		chiselServer, err = chserver.NewServer(serverConfig)
+		if err != nil {
+			cancel()
+			delete(s.activeServices, config.ID)
+			return fmt.Errorf("failed to create Chisel server '%s': %w", config.Name, err)
+		}
+	}
+
+	// If we reached here, client/server was successfully created.
+	// Now update PID in DB and then launch the goroutine.
+	config.PID = 1
+	log.Printf("ChiselService: StartChisel: Attempting to save PID %d for config '%s' (ID: %d)", config.PID, config.Name, config.ID)
+	if err := db.Save(config).Error; err != nil {
+		cancel()
+		delete(s.activeServices, config.ID)
+		return fmt.Errorf("failed to update Chisel config PID in DB for '%s': %w", config.Name, err)
+	}
+	log.Printf("ChiselService: StartChisel: Successfully saved PID %d for config '%s' (ID: %d)", config.PID, config.Name, config.ID)
+
+	go func(cfg *model.ChiselConfig, client *chclient.Client, server *chserver.Server) {
 		defer func() {
 			s.mu.Lock()
-			delete(s.activeServices, config.ID)
+			delete(s.activeServices, cfg.ID)
 			s.mu.Unlock()
 
 			var dbConfig model.ChiselConfig
 			goroutineDB := database.GetDB()
-			if goroutineDB.First(&dbConfig, config.ID).Error == nil {
+			if goroutineDB.First(&dbConfig, cfg.ID).Error == nil {
 				if dbConfig.PID != 0 {
 					dbConfig.PID = 0
 					goroutineDB.Save(&dbConfig)
+					log.Printf("ChiselService: Goroutine defer: Reset PID to 0 for config '%s' (ID: %d)", cfg.Name, cfg.ID)
 				}
 			}
-			log.Printf("Chisel service '%s' stopped.", config.Name)
+			log.Printf("Chisel service '%s' stopped.", cfg.Name)
 		}()
 
-		var err error
-		args := strings.Fields(config.Args)
-
-		if config.Mode == "client" {
-			remotes := []string{}
-			auth := ""
-			skipVerify := false
-
-			i := 0
-			for i < len(args) {
-				arg := args[i]
-				if arg == "--auth" && i+1 < len(args) {
-					auth = args[i+1]
-					i += 2
-				} else if arg == "--tls-skip-verify" || arg == "--tls" {
-					skipVerify = true
-					i++
-				} else {
-					remotes = append(remotes, arg)
-					i++
+		        var runErr error
+				if cfg.Mode == "client" {
+					log.Printf("ChiselService: Goroutine: Attempting to start Chisel client '%s' (ID: %d)", cfg.Name, cfg.ID)
+					runErr = client.Start(ctx)
+					log.Printf("ChiselService: Goroutine: Chisel client '%s' (ID: %d) Start() returned: %v", cfg.Name, cfg.ID, runErr)
+				} else { // server
+					host := "0.0.0.0"
+					port := fmt.Sprintf("%d", cfg.ListenPort)
+					log.Printf("ChiselService: Goroutine: Attempting to start Chisel server '%s' (ID: %d) on %s:%s", cfg.Name, cfg.ID, host, port)
+					runErr = server.StartContext(ctx, host, port)
+					log.Printf("ChiselService: Goroutine: Chisel server '%s' (ID: %d) StartContext() returned: %v", cfg.Name, cfg.ID, runErr)
 				}
-			}
+		
+				if runErr != nil && runErr != context.Canceled {
+					log.Printf("Error running chisel service '%s': %v", cfg.Name, runErr)
+				} else if runErr == nil { // If Start was successful, wait for context cancellation
+					log.Printf("ChiselService: Goroutine: Chisel service '%s' (ID: %d) started successfully, waiting for context cancellation.", cfg.Name, cfg.ID)
+					<-ctx.Done() // Block until context is cancelled
+					log.Printf("ChiselService: Goroutine: Context cancelled for '%s' (ID: %d).", cfg.Name, cfg.ID)
+				}	}(config, chiselClient, chiselServer) // Pass client/server instance to the goroutine
 
-			serverURL := fmt.Sprintf("%s:%d", config.ServerAddress, config.ServerPort)
-			if skipVerify { // A bit of a hack, but if we're skipping verify, we're probably using TLS
-				serverURL = "https://" + serverURL
-			}
-
-			clientConfig := &chclient.Config{
-				Remotes:   remotes,
-				Auth:      auth,
-				Server:    serverURL,
-				KeepAlive: 25 * time.Second,
-				Headers:   http.Header{},
-				TLS: chclient.TLSConfig{
-					SkipVerify: skipVerify,
-					ServerName: config.ServerAddress,
-				},
-			}
-
-			c, err_client := chclient.NewClient(clientConfig)
-			if err_client != nil {
-				err = err_client
-			} else {
-				err = c.Start(ctx)
-			}
-		} else { // server
-			serverConfig := &chserver.Config{
-				Reverse:   false,
-				KeepAlive: 25 * time.Second,
-			}
-			for i, arg := range args {
-				switch arg {
-				case "--reverse":
-					serverConfig.Reverse = true
-				case "--auth":
-					if i+1 < len(args) {
-						serverConfig.Auth = args[i+1]
-					}
-				}
-			}
-
-			serv, err_server := chserver.NewServer(serverConfig)
-			if err_server != nil {
-				err = err_server
-			} else {
-				host := "0.0.0.0"
-				port := fmt.Sprintf("%d", config.ListenPort)
-				err = serv.StartContext(ctx, host, port)
-			}
-		}
-
-		if err != nil && err != context.Canceled {
-			log.Printf("Error running chisel service '%s': %v", config.Name, err)
-		}
-	}()
-
-	config.PID = 1
-	return db.Save(config).Error
+	return nil
 }
 
 func (s *ChiselService) StopChisel(config *model.ChiselConfig) error {
