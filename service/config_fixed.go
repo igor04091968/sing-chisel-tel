@@ -1,32 +1,6 @@
+// This file is deprecated - use config.go instead.
+// All functionality is now in config.go with the Chisel field properly declared as a pointer.
 package service
-
-import (
-	"encoding/json"
-	"strconv"
-	"time"
-
-	"github.com/alireza0/s-ui/core"
-	"github.com/alireza0/s-ui/database"
-	"github.com/alireza0/s-ui/database/model"
-	"github.com/alireza0/s-ui/logger"
-	"github.com/alireza0/s-ui/util/common"
-)
-
-var (
-	LastUpdate int64
-	corePtr    *core.Core
-)
-
-type ConfigService struct {
-	ClientService
-	TlsService
-	SettingService
-	InboundService
-	OutboundService
-	ServicesService
-	EndpointService
-	Chisel *ChiselService
-}
 
 type SingBoxConfig struct {
 	Log          json.RawMessage   `json:"log"`

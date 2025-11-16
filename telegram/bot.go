@@ -23,9 +23,9 @@ type AppServices interface {
 	RestartApp()
 	GetConfigService() *service.ConfigService
 	GetChiselService() *service.ChiselService
-	GetMTProtoService() *service.MTProtoService // Added
-	GetGreService() *service.GreService         // Added
-	GetTapService() *service.TapService         // Added
+	GetMTProtoService() *service.MTProtoEmbeddedService // Updated to embedded version
+	GetGreService() *service.GreService                // Added
+	GetTapService() *service.TapService                // Added
 	GetFirstInboundId() (uint, error)
 	GetUserByEmail(email string) (*model.Client, error)
 	GetAllUsers() (*[]model.Client, error)
@@ -37,6 +37,7 @@ type AppServices interface {
 	BackupDB(exclude string) ([]byte, error)
 	GetAllInbounds() ([]model.Inbound, error)
 	GetAllOutbounds() ([]model.Outbound, error)
+	GetGostService() *service.GostService
 }
 
 var (
@@ -194,6 +195,19 @@ func handleCommand(ctx context.Context, b *bot.Bot, message *models.Message) {
 		handleStartChisel(ctx, b, message, args)
 	case "/stop_chisel":
 		handleStopChisel(ctx, b, message, args)
+	// GOST Tunnel Commands
+	case "/add_gost_server":
+		handleAddGostServer(ctx, b, message, args)
+	case "/add_gost_client":
+		handleAddGostClient(ctx, b, message, args)
+	case "/list_gost":
+		handleListGost(ctx, b, message)
+	case "/remove_gost":
+		handleRemoveGost(ctx, b, message, args)
+	case "/start_gost":
+		handleStartGost(ctx, b, message, args)
+	case "/stop_gost":
+		handleStopGost(ctx, b, message, args)
 	case "/list_inbounds":
 		handleListInbounds(ctx, b, message)
 	case "/list_outbounds":
@@ -802,6 +816,225 @@ func handleRemoveChisel(ctx context.Context, b *bot.Bot, message *models.Message
 	b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: fmt.Sprintf("Chisel config '%s' removed successfully.", name)})
 }
 
+// GOST Handlers
+func handleAddGostServer(ctx context.Context, b *bot.Bot, message *models.Message, args []string) {
+	if len(args) < 2 {
+		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: "Usage: /add_gost_server <name> <listen_port> <args...> (args should include forwarding rules for gost)"})
+		return
+	}
+
+	name := args[0]
+	port, err := strconv.Atoi(args[1])
+	if err != nil {
+		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: "Invalid port number."})
+		return
+	}
+
+	extraArgs := ""
+	if len(args) > 2 {
+		extraArgs = strings.Join(args[2:], " ")
+	}
+
+	config := model.GostConfig{
+		Name:          name,
+		Mode:          "server",
+		ListenAddress: "0.0.0.0",
+		ListenPort:    port,
+		Args:          extraArgs,
+		Status:        "down",
+	}
+
+	gostService := services.GetGostService()
+	if err := gostService.CreateGostConfig(&config); err != nil {
+		log.Printf("Error creating gost config: %v", err)
+		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: fmt.Sprintf("Error creating config: %v", err)})
+		return
+	}
+
+	b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: fmt.Sprintf("Gost server config '%s' created. Starting...", name)})
+
+	if err := gostService.StartGost(&config); err != nil {
+		log.Printf("Error starting gost server: %v", err)
+		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: fmt.Sprintf("Error starting gost server: %v", err)})
+		return
+	}
+
+	b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: fmt.Sprintf("Gost server '%s' started successfully on port %d.", name, port)})
+}
+
+func handleAddGostClient(ctx context.Context, b *bot.Bot, message *models.Message, args []string) {
+	if len(args) < 3 {
+		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: "Usage: /add_gost_client <name> <server:port> <args...> (args should describe forwarding for gost client)"})
+		return
+	}
+
+	name := args[0]
+	serverAddr := args[1]
+	extraArgs := ""
+	if len(args) > 2 {
+		extraArgs = strings.Join(args[2:], " ")
+	}
+
+	serverParts := strings.Split(serverAddr, ":")
+	if len(serverParts) != 2 {
+		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: "Invalid server address format. Use <server:port>."})
+		return
+	}
+	serverHost := serverParts[0]
+	serverPort, err := strconv.Atoi(serverParts[1])
+	if err != nil {
+		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: "Invalid server port."})
+		return
+	}
+
+	config := model.GostConfig{
+		Name:          name,
+		Mode:          "client",
+		ServerAddress: serverHost,
+		ServerPort:    serverPort,
+		Args:          extraArgs,
+		Status:        "down",
+	}
+
+	gostService := services.GetGostService()
+	if err := gostService.CreateGostConfig(&config); err != nil {
+		log.Printf("Error creating gost config: %v", err)
+		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: fmt.Sprintf("Error creating config: %v", err)})
+		return
+	}
+
+	b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: fmt.Sprintf("Gost client config '%s' created. Starting...", name)})
+
+	if err := gostService.StartGost(&config); err != nil {
+		log.Printf("Error starting gost client: %v", err)
+		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: fmt.Sprintf("Error starting gost client: %v", err)})
+		return
+	}
+
+	b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: fmt.Sprintf("Gost client '%s' started successfully.", name)})
+}
+
+func handleListGost(ctx context.Context, b *bot.Bot, message *models.Message) {
+	gostService := services.GetGostService()
+	configs, err := gostService.GetAllGostConfigs()
+	if err != nil {
+		log.Printf("Error getting gost configs: %v", err)
+		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: "Error getting gost configs."})
+		return
+	}
+
+	if len(configs) == 0 {
+		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: "No GOST services configured."})
+		return
+	}
+
+	var response strings.Builder
+	response.WriteString("Configured GOST Services:\n")
+	for _, config := range configs {
+		response.WriteString(fmt.Sprintf("\n- Name: %s\n", config.Name))
+		response.WriteString(fmt.Sprintf("  Mode: %s\n", config.Mode))
+		if config.Mode == "server" {
+			response.WriteString(fmt.Sprintf("  Listen: %s:%d\n", config.ListenAddress, config.ListenPort))
+		} else {
+			response.WriteString(fmt.Sprintf("  Server: %s:%d\n", config.ServerAddress, config.ServerPort))
+			if config.Args != "" {
+				response.WriteString(fmt.Sprintf("  Args: %s\n", config.Args))
+			}
+		}
+		response.WriteString(fmt.Sprintf("  Status: %s\n", config.Status))
+	}
+
+	b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: response.String()})
+}
+
+func handleRemoveGost(ctx context.Context, b *bot.Bot, message *models.Message, args []string) {
+	if len(args) != 1 {
+		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: "Usage: /remove_gost <name>"})
+		return
+	}
+	name := args[0]
+	gostService := services.GetGostService()
+	config, err := gostService.GetGostConfigByName(name)
+	if err != nil {
+		log.Printf("Error getting gost config by name %s: %v", name, err)
+		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: fmt.Sprintf("Config with name '%s' not found.", name)})
+		return
+	}
+
+	if config.Status == "up" {
+		if err := gostService.StopGost(config.ID); err != nil {
+			log.Printf("Error stopping gost %s before removing: %v", name, err)
+			b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: fmt.Sprintf("Service '%s' was running, attempted to stop it before removal. It will be removed anyway.", name)})
+		} else {
+			b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: fmt.Sprintf("Service '%s' stopped.", name)})
+		}
+	}
+
+	if err := gostService.DeleteGostConfig(config.ID); err != nil {
+		log.Printf("Error deleting gost config %s: %v", name, err)
+		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: fmt.Sprintf("Error deleting config '%s': %v", name, err)})
+		return
+	}
+
+	b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: fmt.Sprintf("Gost config '%s' removed successfully.", name)})
+}
+
+func handleStartGost(ctx context.Context, b *bot.Bot, message *models.Message, args []string) {
+	if len(args) != 1 {
+		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: "Usage: /start_gost <name>"})
+		return
+	}
+	name := args[0]
+	gostService := services.GetGostService()
+	config, err := gostService.GetGostConfigByName(name)
+	if err != nil {
+		log.Printf("Error getting gost config by name %s: %v", name, err)
+		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: fmt.Sprintf("Config with name '%s' not found.", name)})
+		return
+	}
+
+	if config.Status == "up" {
+		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: fmt.Sprintf("Gost service '%s' is already marked as running.", name)})
+		return
+	}
+
+	if err := gostService.StartGost(config); err != nil {
+		log.Printf("Error starting gost service %s: %v", name, err)
+		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: fmt.Sprintf("Error starting gost service '%s': %v", name, err)})
+		return
+	}
+
+	b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: fmt.Sprintf("Gost service '%s' started successfully.", name)})
+}
+
+func handleStopGost(ctx context.Context, b *bot.Bot, message *models.Message, args []string) {
+	if len(args) != 1 {
+		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: "Usage: /stop_gost <name>"})
+		return
+	}
+	name := args[0]
+	gostService := services.GetGostService()
+	config, err := gostService.GetGostConfigByName(name)
+	if err != nil {
+		log.Printf("Error getting gost config by name %s: %v", name, err)
+		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: fmt.Sprintf("Config with name '%s' not found.", name)})
+		return
+	}
+
+	if config.Status != "up" {
+		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: fmt.Sprintf("Gost service '%s' is not marked as running.", name)})
+		return
+	}
+
+	if err := gostService.StopGost(config.ID); err != nil {
+		log.Printf("Error stopping gost service %s: %v", name, err)
+		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: fmt.Sprintf("Error stopping gost service '%s': %v", name, err)})
+		return
+	}
+
+	b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: fmt.Sprintf("Gost service '%s' stopped successfully.", name)})
+}
+
 func handleStartChisel(ctx context.Context, b *bot.Bot, message *models.Message, args []string) {
 	if len(args) != 1 {
 		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: "Usage: /start_chisel <name>"})
@@ -930,7 +1163,7 @@ func handleAddMTProto(ctx context.Context, b *bot.Bot, message *models.Message, 
 	}
 
 	mtprotoService := services.GetMTProtoService()
-	if err := mtprotoService.CreateMTProtoProxy(&config); err != nil {
+	if err := mtprotoService.CreateMTProtoConfig(&config); err != nil {
 		log.Printf("Error creating MTProto Proxy config: %v", err)
 		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: fmt.Sprintf("Error creating config: %v", err)})
 		return
@@ -938,7 +1171,7 @@ func handleAddMTProto(ctx context.Context, b *bot.Bot, message *models.Message, 
 
 	b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: fmt.Sprintf("MTProto Proxy config '%s' created. Starting...", name)})
 
-	if err := mtprotoService.StartMTProtoProxy(&config); err != nil {
+	if err := mtprotoService.StartMTProto(&config); err != nil {
 		log.Printf("Error starting MTProto Proxy: %v", err)
 		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: fmt.Sprintf("Error starting proxy: %v", err)})
 		return
@@ -949,7 +1182,7 @@ func handleAddMTProto(ctx context.Context, b *bot.Bot, message *models.Message, 
 
 func handleListMTProto(ctx context.Context, b *bot.Bot, message *models.Message) {
 	mtprotoService := services.GetMTProtoService()
-	configs, err := mtprotoService.GetAllMTProtoProxies()
+	configs, err := mtprotoService.GetAllMTProtoConfigs()
 	if err != nil {
 		log.Printf("Error getting MTProto Proxy configs: %v", err)
 		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: "Error getting MTProto Proxy configs."})
@@ -986,7 +1219,7 @@ func handleRemoveMTProto(ctx context.Context, b *bot.Bot, message *models.Messag
 	}
 	name := args[0]
 	mtprotoService := services.GetMTProtoService()
-	config, err := mtprotoService.GetMTProtoProxyByName(name) // Assuming GetMTProtoProxyByName exists
+	config, err := mtprotoService.GetMTProtoConfigByName(name)
 	if err != nil {
 		log.Printf("Error getting MTProto Proxy config by name %s: %v", name, err)
 		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: fmt.Sprintf("Config with name '%s' not found.", name)})
@@ -994,7 +1227,7 @@ func handleRemoveMTProto(ctx context.Context, b *bot.Bot, message *models.Messag
 	}
 
 	if config.Status == "up" {
-		if err := mtprotoService.StopMTProtoProxy(config.ID); err != nil {
+		if err := mtprotoService.StopMTProto(config.ID); err != nil {
 			log.Printf("Error stopping MTProto Proxy %s before removing: %v", name, err)
 			b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: fmt.Sprintf("Proxy '%s' was running, attempted to stop it before removal. It will be removed anyway.", name)})
 		} else {
@@ -1002,7 +1235,7 @@ func handleRemoveMTProto(ctx context.Context, b *bot.Bot, message *models.Messag
 		}
 	}
 
-	if err := mtprotoService.DeleteMTProtoProxy(config.ID); err != nil {
+	if err := mtprotoService.DeleteMTProtoConfig(config.ID); err != nil {
 		log.Printf("Error deleting MTProto Proxy config %s: %v", name, err)
 		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: fmt.Sprintf("Error deleting config '%s': %v", name, err)})
 		return
@@ -1018,7 +1251,7 @@ func handleStartMTProto(ctx context.Context, b *bot.Bot, message *models.Message
 	}
 	name := args[0]
 	mtprotoService := services.GetMTProtoService()
-	config, err := mtprotoService.GetMTProtoProxyByName(name) // Assuming GetMTProtoProxyByName exists
+	config, err := mtprotoService.GetMTProtoConfigByName(name)
 	if err != nil {
 		log.Printf("Error getting MTProto Proxy config by name %s: %v", name, err)
 		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: fmt.Sprintf("Config with name '%s' not found.", name)})
@@ -1030,7 +1263,7 @@ func handleStartMTProto(ctx context.Context, b *bot.Bot, message *models.Message
 		return
 	}
 
-	if err := mtprotoService.StartMTProtoProxy(config); err != nil {
+	if err := mtprotoService.StartMTProto(config); err != nil {
 		log.Printf("Error starting MTProto Proxy %s: %v", name, err)
 		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: fmt.Sprintf("Error starting proxy '%s': %v", name, err)})
 		return
@@ -1046,7 +1279,7 @@ func handleStopMTProto(ctx context.Context, b *bot.Bot, message *models.Message,
 	}
 	name := args[0]
 	mtprotoService := services.GetMTProtoService()
-	config, err := mtprotoService.GetMTProtoProxyByName(name) // Assuming GetMTProtoProxyByName exists
+	config, err := mtprotoService.GetMTProtoConfigByName(name)
 	if err != nil {
 		log.Printf("Error getting MTProto Proxy config by name %s: %v", name, err)
 		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: fmt.Sprintf("Config with name '%s' not found.", name)})
@@ -1058,7 +1291,7 @@ func handleStopMTProto(ctx context.Context, b *bot.Bot, message *models.Message,
 		return
 	}
 
-	if err := mtprotoService.StopMTProtoProxy(config.ID); err != nil {
+	if err := mtprotoService.StopMTProto(config.ID); err != nil {
 		log.Printf("Error stopping MTProto Proxy %s: %v", name, err)
 		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: fmt.Sprintf("Error stopping proxy '%s': %v", name, err)})
 		return

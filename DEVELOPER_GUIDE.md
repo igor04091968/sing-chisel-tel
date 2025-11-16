@@ -71,6 +71,35 @@ The Chisel service management has been integrated into the web panel, allowing u
 
 *   Developers can now extend the web panel to manage other services by following a similar pattern of backend API exposure and frontend component integration.
 
+## 2.3 GOST Reverse Tunnel Service (Embedded)
+
+GOST tunnels have been fully integrated as an **embedded service** within the `s-ui` application. No external binaries are required.
+
+**Key Implementation:**
+
+*   **Service File:** `service/gost.go` - Implements `GostService` with full lifecycle management.
+*   **Database Model:** `database/model/gost.go` - `GostConfig` struct stores tunnel configurations persistently.
+*   **Telegram Integration:** GOST commands in `telegram/bot.go` provide `/add_gost_*`, `/list_gost`, `/start_gost`, `/stop_gost`, `/remove_gost`.
+*   **Technology:** Uses Go standard library `net` package for TCP listening and `io.Copy` for bidirectional forwarding.
+*   **Concurrency:** Each tunnel runs in its own goroutine with `context.CancelFunc` for graceful shutdown.
+*   **No External Deps:** Zero external binary dependencies - everything compiled into the `sui` executable.
+
+**Architecture Pattern:**
+
+The GOST service follows the same architectural pattern as Chisel:
+1. **Tunnel Config** → Stored in `GostConfig` model
+2. **Service Layer** → `GostService` manages lifecycle (Start/Stop)
+3. **Background Goroutine** → Accepts connections and forwards to target
+4. **Context Cancellation** → Graceful shutdown on Stop
+5. **Database Persistence** → Tunnels survive app restart
+
+**Extending GOST Functionality:**
+
+To add more advanced features (encryption, compression, protocol-specific handling):
+- Modify the `forwardConnection()` function in `service/gost.go`
+- Example: Insert encryption layer between `clientConn` and `targetConn` reads/writes
+- Maintain the same service interface for compatibility with Telegram bot
+
 ## 3.1 Telegram Bot Commands for Advanced Services
 
 The Telegram bot has been enhanced with new commands to manage MTProto Proxy, GRE Tunnels, and TAP Tunnels.
@@ -167,6 +196,77 @@ These commands allow you to manage TAP interfaces. `s-ui` must be run with `root
     *   **Parameters:**
         *   `<name>`: Name of the TAP interface to stop.
     *   **Example:** `/stop_tap tap0`
+
+### GOST Reverse Tunnels
+
+These commands allow you to manage embedded reverse TCP tunnels using GOST. Unlike MTProto/GRE/TAP which rely on external processes, GOST tunnels are **fully embedded** in the `s-ui` application with no external binaries required.
+
+**Architecture:**
+- GOST tunnels use Go's standard `net` library for TCP listening and connection forwarding.
+- Bidirectional traffic forwarding via `io.Copy` for reliable data transfer.
+- Built-in context cancellation for graceful shutdown.
+- No root privileges required for basic TCP tunneling.
+
+**Commands:**
+
+*   `/add_gost_server <name> <listen_port> [extra_args]`
+    *   **Description:** Creates and starts a new GOST server tunnel (local listening socket).
+    *   **Parameters:**
+        *   `<name>`: Unique name for the tunnel.
+        *   `<listen_port>`: Port on which the tunnel will listen (0.0.0.0:<port>).
+        *   `[extra_args]` (optional): Additional arguments or target specification (e.g., "192.168.1.100:22").
+    *   **Example:** `/add_gost_server reverse-ssh 9999`
+    *   **Use case:** Listen on port 9999 and wait for manual target specification.
+
+*   `/add_gost_client <name> <server:port> <target_host:target_port> [extra_args]`
+    *   **Description:** Creates and starts a new GOST client tunnel (connects and forwards to target).
+    *   **Parameters:**
+        *   `<name>`: Unique name for the tunnel.
+        *   `<server:port>`: Listening address and port (format: "0.0.0.0:9999").
+        *   `<target_host:target_port>`: Target to forward connections to (format: "192.168.1.100:22").
+        *   `[extra_args]` (optional): Reserved for future use.
+    *   **Example:** `/add_gost_client ssh-reverse 0.0.0.0:9999 192.168.1.100:22`
+    *   **Use case:** Listen on 0.0.0.0:9999, forward all incoming connections to 192.168.1.100:22 (reverse SSH tunnel).
+
+*   `/list_gost`
+    *   **Description:** Lists all configured GOST tunnels, their status, and target addresses.
+    *   **Example:** `/list_gost`
+
+*   `/remove_gost <name>`
+    *   **Description:** Stops and removes a GOST tunnel configuration.
+    *   **Parameters:**
+        *   `<name>`: Name of the tunnel to remove.
+    *   **Example:** `/remove_gost ssh-reverse`
+
+*   `/start_gost <name>`
+    *   **Description:** Starts a stopped GOST tunnel.
+    *   **Parameters:**
+        *   `<name>`: Name of the tunnel to start.
+    *   **Example:** `/start_gost ssh-reverse`
+
+*   `/stop_gost <name>`
+    *   **Description:** Stops a running GOST tunnel.
+    *   **Parameters:**
+        *   `<name>`: Name of the tunnel to stop.
+    *   **Example:** `/stop_gost ssh-reverse`
+
+**Implementation Details:**
+
+- **Database Model:** `database/model/gost.go` defines `GostConfig` with fields for name, mode (server/client), listen/server addresses, ports, and status.
+- **Service Layer:** `service/gost.go` implements `GostService` with methods:
+  - `StartGost(cfg *model.GostConfig)`: Creates TCP listener and starts forwarding goroutine.
+  - `StopGost(id uint)`: Cancels context and closes listener.
+  - `GetAllGostConfigs()`, `GetGostConfigByName()`, `CreateGostConfig()`, `DeleteGostConfig()`.
+- **Connection Forwarding:** `forwardConnection()` helper function handles bidirectional traffic copy with proper error handling.
+- **Database Integration:** GOST configs are persisted in the SQLite database and survive application restarts.
+
+**Developer Notes:**
+
+*   All GOST functionality is **embedded** - no external binaries or system dependencies (beyond TCP networking).
+*   The tunnel status is tracked in the database (`status` field: "up"/"down").
+*   Each tunnel runs in its own goroutine with independent context cancellation.
+*   Connections are forwarded with a 5-second dial timeout to prevent hanging on unreachable targets.
+*   Modify `service/gost.go` to add custom forwarding logic (e.g., protocol-specific handling, encryption, compression).
 
 ## 4. The "Hot Restart" Mechanism
 

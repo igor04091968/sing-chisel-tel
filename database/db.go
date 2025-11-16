@@ -83,6 +83,7 @@ func InitDB(dbPath string) error {
 		&model.Client{},
 		&model.Changes{},
 		&model.ChiselConfig{},
+		&model.GostConfig{},
 		&model.Service{},
 		&model.Tokens{},
 		&model.GreTunnel{},

@@ -6,6 +6,7 @@ require (
 	github.com/gin-contrib/gzip v1.2.3
 	github.com/gin-contrib/sessions v1.0.4
 	github.com/gin-gonic/gin v1.11.0
+	github.com/go-faster/mtproto v0.0.0-20241110134129-1b7e9c97fd27
 	github.com/go-telegram/bot v1.17.0
 	github.com/gofrs/uuid/v5 v5.3.2
 	github.com/jpillora/chisel v1.9.1
