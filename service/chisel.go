@@ -60,7 +60,8 @@ func (s *ChiselService) UpdateChiselConfig(config *model.ChiselConfig) error {
 
 func (s *ChiselService) DeleteChiselConfig(id uint) error {
 	db := database.GetDB()
-	return db.Delete(&model.ChiselConfig{}, id).Error
+	// Use Unscoped() to perform a permanent hard delete, bypassing the soft delete mechanism.
+	return db.Unscoped().Delete(&model.ChiselConfig{}, id).Error
 }
 
 func (s *ChiselService) Save(act string, data json.RawMessage) error {
@@ -286,13 +287,15 @@ func (s *ChiselService) StopChisel(config *model.ChiselConfig) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	cancel, exists := s.activeServices[config.ID]
-	if exists {
+	// Stop the service if it's in the active map
+	if cancel, exists := s.activeServices[config.ID]; exists {
 		cancel()
 		delete(s.activeServices, config.ID)
+		log.Printf("ChiselService: Cancelled and removed active service '%s' (ID: %d) from map.", config.Name, config.ID)
 	}
 
-	// Always reset PID to 0 in DB when StopChisel is called
+	// Always ensure PID is 0 in the database, regardless of whether it was in the active map.
+	// This handles cleanup of stale PIDs from previous crashes.
 	if config.PID != 0 {
 		config.PID = 0
 		if err := db.Save(config).Error; err != nil {
@@ -302,9 +305,5 @@ func (s *ChiselService) StopChisel(config *model.ChiselConfig) error {
 		log.Printf("ChiselService: Successfully reset PID to 0 for config '%s' (ID: %d)", config.Name, config.ID)
 	}
 
-	if !exists {
-		return fmt.Errorf("service '%s' was not actively running", config.Name)
-	}
-
-	return nil
+	return nil // Always return nil on success, even if it wasn't in the active map.
 }

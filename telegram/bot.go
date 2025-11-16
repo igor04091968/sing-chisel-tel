@@ -786,19 +786,16 @@ func handleRemoveChisel(ctx context.Context, b *bot.Bot, message *models.Message
 		return
 	}
 
-	// Stop the service if it's running
-	if config.PID > 0 {
-		if err := chiselService.StopChisel(config); err != nil {
-			log.Printf("Error stopping chisel service %s before removing: %v", name, err)
-			b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: fmt.Sprintf("Service '%s' was running, attempted to stop it before removal. It will be removed anyway.", name)})
-		} else {
-			b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: fmt.Sprintf("Service '%s' stopped.", name)})
-		}
+	// Attempt to stop the service first.
+	if err := chiselService.StopChisel(config); err != nil {
+		// This would likely be a DB error. Log it, but proceed with deletion attempt.
+		log.Printf("Error stopping chisel service %s during removal (will attempt deletion anyway): %v", name, err)
 	}
 
+	// Now, delete the config from the database.
 	if err := chiselService.DeleteChiselConfig(config.ID); err != nil {
 		log.Printf("Error deleting chisel config %s: %v", name, err)
-		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: fmt.Sprintf("Error deleting config '%s': %v", name, err)})
+		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: fmt.Sprintf("Failed to delete config '%s': %v", name, err)})
 		return
 	}
 
