@@ -1,3 +1,30 @@
+// UpdateGost updates an existing gost config by id
+func (a *ApiService) UpdateGost(c *gin.Context) {
+	idStr := c.Request.FormValue("id")
+	data := c.Request.FormValue("data")
+	idI, err := strconv.Atoi(idStr)
+	if err != nil {
+		jsonMsg(c, "gost_update", err)
+		return
+	}
+	var cfg model.GostConfig
+	if err := json.Unmarshal([]byte(data), &cfg); err != nil {
+		jsonMsg(c, "gost_update", err)
+		return
+	}
+	db := database.GetDB()
+	var orig model.GostConfig
+	if db.First(&orig, idI).Error != nil {
+		jsonMsg(c, "gost_update", common.NewError("gost config not found"))
+		return
+	}
+	cfg.ID = orig.ID
+	if err := db.Model(&orig).Updates(cfg).Error; err != nil {
+		jsonMsg(c, "gost_update", err)
+		return
+	}
+	jsonMsg(c, "gost_update", nil)
+}
 package api
 
 import (
@@ -9,6 +36,8 @@ import (
 	"github.com/alireza0/s-ui/logger"
 	"github.com/alireza0/s-ui/service"
 	"github.com/alireza0/s-ui/util"
+	"github.com/alireza0/s-ui/database/model"
+	"github.com/alireza0/s-ui/util/common"
 
 	"github.com/gin-gonic/gin"
 )
@@ -27,6 +56,7 @@ type ApiService struct {
 	service.StatsService
 	service.ServerService
 	service.ChiselService
+	service.GostService
 }
 
 func (a *ApiService) LoadData(c *gin.Context) {
@@ -262,6 +292,87 @@ func (a *ApiService) GetDb(c *gin.Context) {
 	c.Writer.Write(db)
 }
 
+// GetGosts returns all gost configurations
+func (a *ApiService) GetGosts(c *gin.Context) {
+	configs, err := a.GostService.GetAllGostConfigs()
+	if err != nil {
+		jsonMsg(c, "gosts", err)
+		return
+	}
+	jsonObj(c, map[string]interface{}{"gosts": configs}, nil)
+}
+
+// SaveGost creates a new gost configuration from POST data
+func (a *ApiService) SaveGost(c *gin.Context) {
+	action := c.Request.FormValue("action")
+	data := c.Request.FormValue("data")
+	if action == "new" {
+		var cfg model.GostConfig
+		if err := json.Unmarshal([]byte(data), &cfg); err != nil {
+			jsonMsg(c, "gost_save", err)
+			return
+		}
+		if err := a.GostService.CreateGostConfig(&cfg); err != nil {
+			jsonMsg(c, "gost_save", err)
+			return
+		}
+		jsonMsg(c, "gost_save", nil)
+		return
+	}
+	jsonMsg(c, "gost_save", common.NewError("unknown action", action))
+}
+
+// StartGost starts gost by id
+func (a *ApiService) StartGost(c *gin.Context) {
+	idStr := c.Request.FormValue("id")
+	idI, err := strconv.Atoi(idStr)
+	if err != nil {
+		jsonMsg(c, "gost_start", err)
+		return
+	}
+	var cfg model.GostConfig
+	db := database.GetDB()
+	if db.First(&cfg, idI).Error != nil {
+		jsonMsg(c, "gost_start", common.NewError("gost config not found"))
+		return
+	}
+	if err := a.GostService.StartGost(&cfg); err != nil {
+		jsonMsg(c, "gost_start", err)
+		return
+	}
+	jsonMsg(c, "gost_start", nil)
+}
+
+// StopGost stops gost by id
+func (a *ApiService) StopGost(c *gin.Context) {
+	idStr := c.Request.FormValue("id")
+	idI, err := strconv.Atoi(idStr)
+	if err != nil {
+		jsonMsg(c, "gost_stop", err)
+		return
+	}
+	if err := a.GostService.StopGost(uint(idI)); err != nil {
+		jsonMsg(c, "gost_stop", err)
+		return
+	}
+	jsonMsg(c, "gost_stop", nil)
+}
+
+// DeleteGost deletes gost config by id
+func (a *ApiService) DeleteGost(c *gin.Context) {
+	idStr := c.Request.FormValue("id")
+	idI, err := strconv.Atoi(idStr)
+	if err != nil {
+		jsonMsg(c, "gost_delete", err)
+		return
+	}
+	if err := a.GostService.DeleteGostConfig(uint(idI)); err != nil {
+		jsonMsg(c, "gost_delete", err)
+		return
+	}
+	jsonMsg(c, "gost_delete", nil)
+}
+
 func (a *ApiService) postActions(c *gin.Context) (string, json.RawMessage, error) {
 	var data map[string]json.RawMessage
 	err := c.ShouldBind(&data)
@@ -389,4 +500,32 @@ func (a *ApiService) DeleteToken(c *gin.Context) {
 	tokenId := c.Request.FormValue("id")
 	err := a.UserService.DeleteToken(tokenId)
 	jsonMsg(c, "", err)
+}
+
+// UpdateGost updates an existing gost config by id
+func (a *ApiService) UpdateGost(c *gin.Context) {
+	idStr := c.Request.FormValue("id")
+	data := c.Request.FormValue("data")
+	idI, err := strconv.Atoi(idStr)
+	if err != nil {
+		jsonMsg(c, "gost_update", err)
+		return
+	}
+	var cfg model.GostConfig
+	if err := json.Unmarshal([]byte(data), &cfg); err != nil {
+		jsonMsg(c, "gost_update", err)
+		return
+	}
+	db := database.GetDB()
+	var orig model.GostConfig
+	if db.First(&orig, idI).Error != nil {
+		jsonMsg(c, "gost_update", common.NewError("gost config not found"))
+		return
+	}
+	cfg.ID = orig.ID
+	if err := db.Model(&orig).Updates(cfg).Error; err != nil {
+		jsonMsg(c, "gost_update", err)
+		return
+	}
+	jsonMsg(c, "gost_update", nil)
 }

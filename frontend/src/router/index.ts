@@ -40,6 +40,11 @@ const routes = [
         component: () => import('@/views/Services.vue'),
       },
       {
+        path: '/gosts',
+        name: 'pages.gosts',
+        component: () => import('@/views/Gosts.vue'),
+      },
+      {
         path: '/endpoints',
         name: 'pages.endpoints',
         component: () => import('@/views/Endpoints.vue'),

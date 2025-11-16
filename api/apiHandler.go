@@ -36,6 +36,44 @@ func (a *APIHandler) postHandler(c *gin.Context) {
 	action := c.Param("postAction")
 
 	switch action {
+	case "mtprotos":
+		a.ApiService.GetMTProtos(c)
+	case "gres":
+		a.ApiService.GetGres(c)
+	case "taps":
+		a.ApiService.GetTaps(c)
+	case "mtproto_save":
+		a.ApiService.SaveMTProto(c)
+	case "mtproto_start":
+		a.ApiService.StartMTProto(c)
+	case "mtproto_stop":
+		a.ApiService.StopMTProto(c)
+	case "mtproto_delete":
+		a.ApiService.DeleteMTProto(c)
+	case "mtproto_update":
+		a.ApiService.UpdateMTProto(c)
+	case "gre_save":
+		a.ApiService.SaveGre(c)
+	case "gre_start":
+		a.ApiService.StartGre(c)
+	case "gre_stop":
+		a.ApiService.StopGre(c)
+	case "gre_delete":
+		a.ApiService.DeleteGre(c)
+	case "gre_update":
+		a.ApiService.UpdateGre(c)
+	case "tap_save":
+		a.ApiService.SaveTap(c)
+	case "tap_start":
+		a.ApiService.StartTap(c)
+	case "tap_stop":
+		a.ApiService.StopTap(c)
+	case "tap_delete":
+		a.ApiService.DeleteTap(c)
+	case "tap_update":
+		a.ApiService.UpdateTap(c)
+	case "gost_update":
+		a.ApiService.UpdateGost(c)
 	case "login":
 		a.ApiService.Login(c)
 	case "changePass":
@@ -46,6 +84,14 @@ func (a *APIHandler) postHandler(c *gin.Context) {
 		a.ApiService.RestartApp(c)
 	case "restartSb":
 		a.ApiService.RestartSb(c)
+	case "gost_save":
+		a.ApiService.SaveGost(c)
+	case "gost_start":
+		a.ApiService.StartGost(c)
+	case "gost_stop":
+		a.ApiService.StopGost(c)
+	case "gost_delete":
+		a.ApiService.DeleteGost(c)
 	case "linkConvert":
 		a.ApiService.LinkConvert(c)
 	case "importdb":
@@ -95,6 +141,8 @@ func (a *APIHandler) getHandler(c *gin.Context) {
 		a.ApiService.GetDb(c)
 	case "tokens":
 		a.ApiService.GetTokens(c)
+	case "gosts":
+		a.ApiService.GetGosts(c)
 	default:
 		jsonMsg(c, "failed", common.NewError("unknown action: ", action))
 	}
