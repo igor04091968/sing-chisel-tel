@@ -131,7 +131,7 @@ func handleCommand(ctx context.Context, b *bot.Bot, message *models.Message) {
 				"/list_outbounds\n\n" +
 				"Chisel Commands:\n" +
 				"/add_chisel_server <name> <port> [extra_args]\n" +
-				"/add_chisel_client <name> <server:port> <remotes> [extra_args]\n" +
+				"/add_chisel_client <name> <server:port> [R:local:remote ...] [extra_args]\n" +
 				"/list_chisel\n" +
 				"/remove_chisel <name>\n" +
 				"/start_chisel <name>\n" +
@@ -644,14 +644,14 @@ func handleAddChiselServer(ctx context.Context, b *bot.Bot, message *models.Mess
 }
 
 func handleAddChiselClient(ctx context.Context, b *bot.Bot, message *models.Message, args []string) {
-	if len(args) < 3 {
-		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: "Usage: /add_chisel_client <name> <server:port> <remotes> [extra_args]"})
+	// Usage: /add_chisel_client <name> <server:port> [remotes_and_extra_args...]
+	if len(args) < 2 {
+		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: "Usage: /add_chisel_client <name> <server:port> [remotes_and_extra_args]"})
 		return
 	}
 
 	name := args[0]
 	serverAddr := args[1]
-	remotes := args[2]
 
 	serverParts := strings.Split(serverAddr, ":")
 	if len(serverParts) != 2 {
@@ -665,18 +665,52 @@ func handleAddChiselClient(ctx context.Context, b *bot.Bot, message *models.Mess
 		return
 	}
 
-	allArgs := []string{remotes}
-	if len(args) > 3 {
-		allArgs = append(allArgs, args[3:]...)
+	var finalArgs []string
+
+	// Always include default auth and TLS skip verify for HTTPS connection
+	finalArgs = append(finalArgs, "--auth", "chisel:2025")
+	finalArgs = append(finalArgs, "--tls-skip-verify")
+
+	// Default remotes
+	defaultRemotes := []string{
+		"R:2095:localhost:2095",
+		"R:2096:localhost:2096",
+		"R:1025:localhost:1025",
+		"R:1026:localhost:1026",
+		"R:1027:localhost:1027",
+		"R:1028:localhost:1028",
 	}
-	extraArgs := strings.Join(allArgs, " ")
+
+	// Check if user provided any remotes or extra args
+	if len(args) > 2 {
+		userProvidedArgs := args[2:]
+		hasExplicitRemotes := false
+		for _, arg := range userProvidedArgs {
+			if strings.HasPrefix(arg, "R:") {
+				hasExplicitRemotes = true
+				break
+			}
+		}
+
+		if hasExplicitRemotes {
+			// User provided explicit remotes, so append all their args directly
+			finalArgs = append(finalArgs, userProvidedArgs...)
+		} else {
+			// No explicit remotes from user, so use defaults and append their other extra args
+			finalArgs = append(finalArgs, defaultRemotes...)
+			finalArgs = append(finalArgs, userProvidedArgs...)
+		}
+	} else {
+		// No arguments after <server:port>, so use default remotes
+		finalArgs = append(finalArgs, defaultRemotes...)
+	}
 
 	config := model.ChiselConfig{
 		Name:          name,
 		Mode:          "client",
 		ServerAddress: serverHost,
 		ServerPort:    serverPort,
-		Args:          extraArgs,
+		Args:          strings.Join(finalArgs, " "),
 	}
 
 	chiselService := services.GetChiselService()
