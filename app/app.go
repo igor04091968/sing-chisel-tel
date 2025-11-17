@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"log"
 	"os"
+	"time"
 
 	"github.com/alireza0/s-ui/config"
 	"github.com/alireza0/s-ui/core"
@@ -171,6 +172,7 @@ func (a *APP) Start() error {
 				logger.Error("Error auto-starting Chisel client '", cfg.Name, "':", err)
 			} else {
 				logger.Info("Chisel client '", cfg.Name, "' auto-started.")
+				time.Sleep(1 * time.Second)
 			}
 		}
 	}
@@ -313,5 +315,13 @@ func (a *APP) GetTapService() *service.TapService {
 
 func (a *APP) GetGostService() *service.GostService {
 	return a.gostService
+}
+
+func (a *APP) GetWebServer() *web.Server {
+	return a.webServer
+}
+
+func (a *APP) GetSubServer() *sub.Server {
+	return a.subServer
 }
 

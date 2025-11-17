@@ -12,7 +12,9 @@ import (
 
 	"github.com/alireza0/s-ui/database/model"
 	"github.com/alireza0/s-ui/service"
+	"github.com/alireza0/s-ui/sub"
 	"github.com/alireza0/s-ui/util"
+	"github.com/alireza0/s-ui/web"
 	"github.com/go-telegram/bot"
 	"github.com/go-telegram/bot/models"
 	"github.com/gofrs/uuid/v5"
@@ -38,6 +40,8 @@ type AppServices interface {
 	GetAllInbounds() ([]model.Inbound, error)
 	GetAllOutbounds() ([]model.Outbound, error)
 	GetGostService() *service.GostService
+	GetWebServer() *web.Server
+	GetSubServer() *sub.Server
 }
 
 var (
@@ -1053,6 +1057,32 @@ func handleStartChisel(ctx context.Context, b *bot.Bot, message *models.Message,
 		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: fmt.Sprintf("Chisel service '%s' is already marked as running.", name)})
 		return
 	}
+
+	// Stop web servers to free up ports
+	webServer := services.GetWebServer()
+	subServer := services.GetSubServer()
+
+	log.Println("Stopping web server to start Chisel...")
+	if err := webServer.Stop(); err != nil {
+		log.Printf("Error stopping web server: %v", err)
+		// Decide if you want to proceed or not. For now, we'll log and continue.
+	}
+	log.Println("Stopping sub server to start Chisel...")
+	if err := subServer.Stop(); err != nil {
+		log.Printf("Error stopping sub server: %v", err)
+	}
+
+	// Defer the restart of the web servers
+	defer func() {
+		log.Println("Restarting web server after Chisel start attempt...")
+		if err := webServer.Start(); err != nil {
+			log.Printf("Error restarting web server: %v", err)
+		}
+		log.Println("Restarting sub server after Chisel start attempt...")
+		if err := subServer.Start(); err != nil {
+			log.Printf("Error restarting sub server: %v", err)
+		}
+	}()
 
 	if err := chiselService.StartChisel(config); err != nil {
 		log.Printf("Error starting chisel service %s: %v", name, err)
