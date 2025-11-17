@@ -1,8 +1,11 @@
 package api
 
 import (
+	_ "encoding/json"
+	"strconv"
 	"strings"
 
+	"github.com/alireza0/s-ui/database/model"
 	"github.com/alireza0/s-ui/util/common"
 
 	"github.com/gin-gonic/gin"
@@ -37,41 +40,110 @@ func (a *APIHandler) postHandler(c *gin.Context) {
 
 	switch action {
 	case "mtprotos":
-		a.ApiService.GetMTProtos(c)
+		proxies, err := a.ApiService.GetAllMTProtoProxies()
+		if err != nil {
+			jsonMsg(c, "mtprotos", err)
+			return
+		}
+		jsonObj(c, proxies, nil)
 	case "gres":
-		a.ApiService.GetGres(c)
+		tunnels, err := a.ApiService.GetAllGreTunnels()
+		if err != nil {
+			jsonMsg(c, "gres", err)
+			return
+		}
+		jsonObj(c, tunnels, nil)
 	case "taps":
-		a.ApiService.GetTaps(c)
+		tunnels, err := a.ApiService.GetAllTapTunnels()
+		if err != nil {
+			jsonMsg(c, "taps", err)
+			return
+		}
+		jsonObj(c, tunnels, nil)
 	case "mtproto_save":
-		a.ApiService.SaveMTProto(c)
+		var config model.MTProtoProxyConfig
+		if err := c.ShouldBindJSON(&config); err != nil {
+			jsonMsg(c, "mtproto_save", err)
+			return
+		}
+		err := a.ApiService.CreateMTProtoProxy(&config)
+		jsonMsg(c, "mtproto_save", err)
 	case "mtproto_start":
-		a.ApiService.StartMTProto(c)
+		var config model.MTProtoProxyConfig
+		if err := c.ShouldBindJSON(&config); err != nil {
+			jsonMsg(c, "mtproto_start", err)
+			return
+		}
+		err := a.ApiService.StartMTProtoProxy(&config)
+		jsonMsg(c, "mtproto_start", err)
 	case "mtproto_stop":
-		a.ApiService.StopMTProto(c)
+		id, err := strconv.ParseUint(c.PostForm("id"), 10, 32)
+		if err != nil {
+			jsonMsg(c, "mtproto_stop", err)
+			return
+		}
+		err = a.ApiService.StopMTProtoProxy(uint(id))
+		jsonMsg(c, "mtproto_stop", err)
 	case "mtproto_delete":
-		a.ApiService.DeleteMTProto(c)
+		id, err := strconv.ParseUint(c.PostForm("id"), 10, 32)
+		if err != nil {
+			jsonMsg(c, "mtproto_delete", err)
+			return
+		}
+		err = a.ApiService.DeleteMTProtoProxy(uint(id))
+		jsonMsg(c, "mtproto_delete", err)
 	case "mtproto_update":
-		a.ApiService.UpdateMTProto(c)
+		var config model.MTProtoProxyConfig
+		if err := c.ShouldBindJSON(&config); err != nil {
+			jsonMsg(c, "mtproto_update", err)
+			return
+		}
+		err := a.ApiService.UpdateMTProtoProxy(&config)
+		jsonMsg(c, "mtproto_update", err)
 	case "gre_save":
-		a.ApiService.SaveGre(c)
-	case "gre_start":
-		a.ApiService.StartGre(c)
-	case "gre_stop":
-		a.ApiService.StopGre(c)
+		var config model.GreTunnel
+		if err := c.ShouldBindJSON(&config); err != nil {
+			jsonMsg(c, "gre_save", err)
+			return
+		}
+		err := a.ApiService.CreateGreTunnel(&config)
+		jsonMsg(c, "gre_save", err)
+	// case "gre_start":
+	// 	a.ApiService.StartGre(c)
+	// case "gre_stop":
+	// 	a.ApiService.StopGre(c)
 	case "gre_delete":
-		a.ApiService.DeleteGre(c)
-	case "gre_update":
-		a.ApiService.UpdateGre(c)
+		id, err := strconv.ParseUint(c.PostForm("id"), 10, 32)
+		if err != nil {
+			jsonMsg(c, "gre_delete", err)
+			return
+		}
+		err = a.ApiService.DeleteGreTunnel(uint(id))
+		jsonMsg(c, "gre_delete", err)
+	// case "gre_update":
+	// 	a.ApiService.UpdateGre(c)
 	case "tap_save":
-		a.ApiService.SaveTap(c)
-	case "tap_start":
-		a.ApiService.StartTap(c)
-	case "tap_stop":
-		a.ApiService.StopTap(c)
+		var config model.TapTunnel
+		if err := c.ShouldBindJSON(&config); err != nil {
+			jsonMsg(c, "tap_save", err)
+			return
+		}
+		err := a.ApiService.CreateTapTunnel(&config)
+		jsonMsg(c, "tap_save", err)
+	// case "tap_start":
+	// 	a.ApiService.StartTap(c)
+	// case "tap_stop":
+	// 	a.ApiService.StopTap(c)
 	case "tap_delete":
-		a.ApiService.DeleteTap(c)
-	case "tap_update":
-		a.ApiService.UpdateTap(c)
+		id, err := strconv.ParseUint(c.PostForm("id"), 10, 32)
+		if err != nil {
+			jsonMsg(c, "tap_delete", err)
+			return
+		}
+		err = a.ApiService.DeleteTapTunnel(uint(id))
+		jsonMsg(c, "tap_delete", err)
+	// case "tap_update":
+	// 	a.ApiService.UpdateTap(c)
 	case "gost_update":
 		a.ApiService.UpdateGost(c)
 	case "login":

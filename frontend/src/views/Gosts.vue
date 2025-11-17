@@ -56,6 +56,9 @@ const load = async () => {
   if (msg.success) {
     gosts.value = msg.obj.gosts || []
   }
+}
+
+const edit = (item: any) => {
   editForm.value = { ...item }
   showEdit.value = true
 }
@@ -67,13 +70,13 @@ const start = async (id:number) => {
     return
   }
   const payload = JSON.stringify(editForm.value)
-  const msg = await HttpUtils.post('api/gost_update', { id: String(editForm.value.ID), data: payload })
+  const msg = await HttpUtils.post('api/gost_update', { id: String(editForm.value.id), data: payload })
   if (msg.success) {
     showEdit.value = false
     load()
   }
-  const msg = await HttpUtils.post('api/gost_start', { id: String(id) })
-  if (msg.success) load()
+  const startMsg = await HttpUtils.post('api/gost_start', { id: String(id) })
+  if (startMsg.success) load()
 }
 
 const stop = async (id:number) => {

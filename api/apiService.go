@@ -1,30 +1,3 @@
-// UpdateGost updates an existing gost config by id
-func (a *ApiService) UpdateGost(c *gin.Context) {
-	idStr := c.Request.FormValue("id")
-	data := c.Request.FormValue("data")
-	idI, err := strconv.Atoi(idStr)
-	if err != nil {
-		jsonMsg(c, "gost_update", err)
-		return
-	}
-	var cfg model.GostConfig
-	if err := json.Unmarshal([]byte(data), &cfg); err != nil {
-		jsonMsg(c, "gost_update", err)
-		return
-	}
-	db := database.GetDB()
-	var orig model.GostConfig
-	if db.First(&orig, idI).Error != nil {
-		jsonMsg(c, "gost_update", common.NewError("gost config not found"))
-		return
-	}
-	cfg.ID = orig.ID
-	if err := db.Model(&orig).Updates(cfg).Error; err != nil {
-		jsonMsg(c, "gost_update", err)
-		return
-	}
-	jsonMsg(c, "gost_update", nil)
-}
 package api
 
 import (
@@ -57,6 +30,9 @@ type ApiService struct {
 	service.ServerService
 	service.ChiselService
 	service.GostService
+	service.MTProtoService
+	service.GreService
+	service.TapService
 }
 
 func (a *ApiService) LoadData(c *gin.Context) {
