@@ -3,6 +3,7 @@ package api
 import (
 	"strings"
 
+	"github.com/alireza0/s-ui/service"
 	"github.com/alireza0/s-ui/util/common"
 
 	"github.com/gin-gonic/gin"
@@ -13,10 +14,36 @@ type APIHandler struct {
 	apiv2 *APIv2Handler
 }
 
-func NewAPIHandler(g *gin.RouterGroup, a2 *APIv2Handler) {
+// NewAPIHandler creates API routes and initializes ApiService from provided bundle.
+func NewAPIHandler(g *gin.RouterGroup, a2 *APIv2Handler, bundle *service.ServicesBundle) {
 	a := &APIHandler{
 		apiv2: a2,
 	}
+
+	// If a services bundle is provided, populate the embedded ApiService fields
+	if bundle != nil {
+		a.ApiService.SettingService = bundle.SettingService
+		a.ApiService.UserService = bundle.UserService
+		if bundle.ConfigService != nil {
+			a.ApiService.ConfigService = *bundle.ConfigService
+		}
+		a.ApiService.ClientService = bundle.ClientService
+		a.ApiService.TlsService = bundle.TlsService
+		a.ApiService.InboundService = bundle.InboundService
+		a.ApiService.OutboundService = bundle.OutboundService
+		a.ApiService.EndpointService = bundle.EndpointService
+		a.ApiService.ServicesService = bundle.ServicesService
+		a.ApiService.PanelService = bundle.PanelService
+		a.ApiService.StatsService = bundle.StatsService
+		a.ApiService.ServerService = bundle.ServerService
+		if bundle.ChiselService != nil {
+			a.ApiService.ChiselService = *bundle.ChiselService
+		}
+		if bundle.GostService != nil {
+			a.ApiService.GostService = *bundle.GostService
+		}
+	}
+
 	a.initRouter(g)
 }
 
@@ -36,44 +63,6 @@ func (a *APIHandler) postHandler(c *gin.Context) {
 	action := c.Param("postAction")
 
 	switch action {
-	case "mtprotos":
-		a.ApiService.GetMTProtos(c)
-	case "gres":
-		a.ApiService.GetGres(c)
-	case "taps":
-		a.ApiService.GetTaps(c)
-	case "mtproto_save":
-		a.ApiService.SaveMTProto(c)
-	case "mtproto_start":
-		a.ApiService.StartMTProto(c)
-	case "mtproto_stop":
-		a.ApiService.StopMTProto(c)
-	case "mtproto_delete":
-		a.ApiService.DeleteMTProto(c)
-	case "mtproto_update":
-		a.ApiService.UpdateMTProto(c)
-	case "gre_save":
-		a.ApiService.SaveGre(c)
-	case "gre_start":
-		a.ApiService.StartGre(c)
-	case "gre_stop":
-		a.ApiService.StopGre(c)
-	case "gre_delete":
-		a.ApiService.DeleteGre(c)
-	case "gre_update":
-		a.ApiService.UpdateGre(c)
-	case "tap_save":
-		a.ApiService.SaveTap(c)
-	case "tap_start":
-		a.ApiService.StartTap(c)
-	case "tap_stop":
-		a.ApiService.StopTap(c)
-	case "tap_delete":
-		a.ApiService.DeleteTap(c)
-	case "tap_update":
-		a.ApiService.UpdateTap(c)
-	case "gost_update":
-		a.ApiService.UpdateGost(c)
 	case "login":
 		a.ApiService.Login(c)
 	case "changePass":
@@ -92,6 +81,8 @@ func (a *APIHandler) postHandler(c *gin.Context) {
 		a.ApiService.StopGost(c)
 	case "gost_delete":
 		a.ApiService.DeleteGost(c)
+	case "gost_update":
+		a.ApiService.UpdateGost(c)
 	case "linkConvert":
 		a.ApiService.LinkConvert(c)
 	case "importdb":
@@ -141,8 +132,6 @@ func (a *APIHandler) getHandler(c *gin.Context) {
 		a.ApiService.GetDb(c)
 	case "tokens":
 		a.ApiService.GetTokens(c)
-	case "gosts":
-		a.ApiService.GetGosts(c)
 	default:
 		jsonMsg(c, "failed", common.NewError("unknown action: ", action))
 	}

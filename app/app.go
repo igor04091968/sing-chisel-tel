@@ -24,7 +24,7 @@ type APP struct {
 	service.SettingService
 	configService  *service.ConfigService
 	statsService   *service.StatsService
-	serverService  *service.ServerService   // New field for server service
+	serverService  *service.ServerService // New field for server service
 	chiselService  *service.ChiselService
 	gostService    *service.GostService
 	mtprotoService *service.MTProtoEmbeddedService // Updated to embedded version
@@ -70,6 +70,30 @@ func (a *APP) Init() error {
 	a.greService = service.NewGreService()                 // Added
 	a.tapService = service.NewTapService()                 // Added
 	a.configService = service.NewConfigService(a.core, a.chiselService)
+
+	// Initialize lightweight services that don't have complex constructors
+	a.statsService = &service.StatsService{}
+	a.serverService = &service.ServerService{}
+
+	// Provide initialized services to the web server so API handlers can use them
+	if a.webServer != nil {
+		bundle := &service.ServicesBundle{
+			SettingService:  a.SettingService,
+			ConfigService:   a.configService,
+			ClientService:   service.ClientService{},
+			TlsService:      service.TlsService{},
+			InboundService:  service.InboundService{},
+			OutboundService: service.OutboundService{},
+			EndpointService: service.EndpointService{},
+			ServicesService: service.ServicesService{},
+			PanelService:    service.PanelService{},
+			StatsService:    *a.statsService,
+			ServerService:   *a.serverService,
+			ChiselService:   a.chiselService,
+			GostService:     a.gostService,
+		}
+		a.webServer.SetServicesBundle(bundle)
+	}
 
 	// --- Add default Chisel client config if none exists ---
 	chiselClients, err := a.chiselService.GetAllChiselConfigs()
@@ -260,27 +284,27 @@ func (a *APP) GetChiselService() *service.ChiselService {
 }
 
 func (a *APP) GetFirstInboundId() (uint, error) {
-    return a.configService.GetFirstInboundId()
+	return a.configService.GetFirstInboundId()
 }
 
 func (a *APP) GetUserByEmail(email string) (*model.Client, error) {
-    return a.configService.GetUserByEmail(email)
+	return a.configService.GetUserByEmail(email)
 }
 
 func (a *APP) FromIds(ids []uint) ([]*model.Inbound, error) {
-    return a.configService.FromIds(ids)
+	return a.configService.FromIds(ids)
 }
 
 func (a *APP) GetOnlines() (*service.Onlines, error) {
-    return a.statsService.GetOnlines()
+	return a.statsService.GetOnlines()
 }
 
 func (a *APP) GetLogs(limit string, level string) []string {
-    return a.serverService.GetLogs(limit, level)
+	return a.serverService.GetLogs(limit, level)
 }
 
 func (a *APP) GetInboundByTag(tag string) (*model.Inbound, error) {
-    return a.configService.GetInboundByTag(tag)
+	return a.configService.GetInboundByTag(tag)
 }
 
 func (a *APP) BackupDB(exclude string) ([]byte, error) {
@@ -288,15 +312,15 @@ func (a *APP) BackupDB(exclude string) ([]byte, error) {
 }
 
 func (a *APP) GetAllUsers() (*[]model.Client, error) {
-    return a.configService.GetAllUsers()
+	return a.configService.GetAllUsers()
 }
 
 func (a *APP) GetAllInbounds() ([]model.Inbound, error) {
-    return a.configService.GetAllInbounds()
+	return a.configService.GetAllInbounds()
 }
 
 func (a *APP) GetAllOutbounds() ([]model.Outbound, error) {
-    return a.configService.GetAllOutbounds()
+	return a.configService.GetAllOutbounds()
 }
 
 func (a *APP) GetMTProtoService() *service.MTProtoEmbeddedService {
@@ -314,4 +338,3 @@ func (a *APP) GetTapService() *service.TapService {
 func (a *APP) GetGostService() *service.GostService {
 	return a.gostService
 }
-
