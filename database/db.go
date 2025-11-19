@@ -8,7 +8,7 @@ import (
 	"github.com/alireza0/s-ui/config"
 	"github.com/alireza0/s-ui/database/model"
 
-	"gorm.io/driver/sqlite"
+	sqlitegorm "github.com/glebarez/sqlite"
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
 )
@@ -49,7 +49,10 @@ func OpenDB(dbPath string) error {
 	c := &gorm.Config{
 		Logger: gormLogger,
 	}
-	db, err = gorm.Open(sqlite.Open(dbPath), c)
+	db, err = gorm.Open(sqlitegorm.Open(dbPath + "?_pragma=foreign_keys(1)"), c)
+	if err != nil {
+		return err
+	}
 
 	if config.IsDebug() {
 		db = db.Debug()
