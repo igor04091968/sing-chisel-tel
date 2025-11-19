@@ -34,6 +34,7 @@ type Server struct {
 	ctx            context.Context
 	cancel         context.CancelFunc
 	settingService service.SettingService
+	servicesBundle *service.ServicesBundle
 }
 
 func NewServer() *Server {
@@ -41,6 +42,16 @@ func NewServer() *Server {
 	return &Server{
 		ctx:    ctx,
 		cancel: cancel,
+	}
+}
+
+// SetServicesBundle passes initialized services created by app into the web server
+// so that routers/handlers can use real service instances.
+func (s *Server) SetServicesBundle(b *service.ServicesBundle) {
+	s.servicesBundle = b
+	// Also set local settingService for convenience
+	if b != nil {
+		s.settingService = b.SettingService
 	}
 }
 
@@ -107,7 +118,9 @@ func (s *Server) initRouter() (*gin.Engine, error) {
 	apiv2 := api.NewAPIv2Handler(group_apiv2)
 
 	group_api := engine.Group(base_url + "api")
-	api.NewAPIHandler(group_api, apiv2)
+	// Pass initialized services bundle to API handler so that ApiService
+	// fields are properly initialized (maps, DB-backed services, etc.).
+	api.NewAPIHandler(group_api, apiv2, s.servicesBundle)
 
 	// Serve index.html as the entry point
 	// Handle all other routes by serving index.html

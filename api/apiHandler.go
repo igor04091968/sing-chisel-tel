@@ -1,11 +1,12 @@
 package api
 
 import (
-	_ "encoding/json"
+	"encoding/json"
 	"strconv"
 	"strings"
 
 	"github.com/alireza0/s-ui/database/model"
+	"github.com/alireza0/s-ui/service"
 	"github.com/alireza0/s-ui/util/common"
 
 	"github.com/gin-gonic/gin"
@@ -16,10 +17,36 @@ type APIHandler struct {
 	apiv2 *APIv2Handler
 }
 
-func NewAPIHandler(g *gin.RouterGroup, a2 *APIv2Handler) {
+// NewAPIHandler creates API routes and initializes ApiService from provided bundle.
+func NewAPIHandler(g *gin.RouterGroup, a2 *APIv2Handler, bundle *service.ServicesBundle) {
 	a := &APIHandler{
 		apiv2: a2,
 	}
+
+	// If a services bundle is provided, populate the embedded ApiService fields
+	if bundle != nil {
+		a.ApiService.SettingService = bundle.SettingService
+		a.ApiService.UserService = bundle.UserService
+		if bundle.ConfigService != nil {
+			a.ApiService.ConfigService = *bundle.ConfigService
+		}
+		a.ApiService.ClientService = bundle.ClientService
+		a.ApiService.TlsService = bundle.TlsService
+		a.ApiService.InboundService = bundle.InboundService
+		a.ApiService.OutboundService = bundle.OutboundService
+		a.ApiService.EndpointService = bundle.EndpointService
+		a.ApiService.ServicesService = bundle.ServicesService
+		a.ApiService.PanelService = bundle.PanelService
+		a.ApiService.StatsService = bundle.StatsService
+		a.ApiService.ServerService = bundle.ServerService
+		if bundle.ChiselService != nil {
+			a.ApiService.ChiselService = *bundle.ChiselService
+		}
+		if bundle.GostService != nil {
+			a.ApiService.GostService = *bundle.GostService
+		}
+	}
+
 	a.initRouter(g)
 }
 
@@ -39,27 +66,36 @@ func (a *APIHandler) postHandler(c *gin.Context) {
 	action := c.Param("postAction")
 
 	switch action {
-	case "mtprotos":
-		proxies, err := a.ApiService.GetAllMTProtoProxies()
-		if err != nil {
-			jsonMsg(c, "mtprotos", err)
-			return
-		}
-		jsonObj(c, proxies, nil)
-	case "gres":
-		tunnels, err := a.ApiService.GetAllGreTunnels()
-		if err != nil {
-			jsonMsg(c, "gres", err)
-			return
-		}
-		jsonObj(c, tunnels, nil)
-	case "taps":
-		tunnels, err := a.ApiService.GetAllTapTunnels()
-		if err != nil {
-			jsonMsg(c, "taps", err)
-			return
-		}
-		jsonObj(c, tunnels, nil)
+	case "login":
+		a.ApiService.Login(c)
+	case "changePass":
+		a.ApiService.ChangePass(c)
+	case "save":
+		a.ApiService.Save(c, loginUser)
+	case "restartApp":
+		a.ApiService.RestartApp(c)
+	case "restartSb":
+		a.ApiService.RestartSb(c)
+	case "gost_save":
+		a.ApiService.SaveGost(c)
+	case "gost_start":
+		a.ApiService.StartGost(c)
+	case "gost_stop":
+		a.ApiService.StopGost(c)
+	case "gost_delete":
+		a.ApiService.DeleteGost(c)
+	case "gost_update":
+		a.ApiService.UpdateGost(c)
+	case "linkConvert":
+		a.ApiService.LinkConvert(c)
+	case "importdb":
+		a.ApiService.ImportDb(c)
+	case "addToken":
+		a.ApiService.AddToken(c)
+		a.apiv2.ReloadTokens()
+	case "deleteToken":
+		a.ApiService.DeleteToken(c)
+		a.apiv2.ReloadTokens()
 	case "mtproto_save":
 		var config model.MTProtoProxyConfig
 		if err := c.ShouldBindJSON(&config); err != nil {
@@ -144,36 +180,6 @@ func (a *APIHandler) postHandler(c *gin.Context) {
 		jsonMsg(c, "tap_delete", err)
 	// case "tap_update":
 	// 	a.ApiService.UpdateTap(c)
-	case "gost_update":
-		a.ApiService.UpdateGost(c)
-	case "login":
-		a.ApiService.Login(c)
-	case "changePass":
-		a.ApiService.ChangePass(c)
-	case "save":
-		a.ApiService.Save(c, loginUser)
-	case "restartApp":
-		a.ApiService.RestartApp(c)
-	case "restartSb":
-		a.ApiService.RestartSb(c)
-	case "gost_save":
-		a.ApiService.SaveGost(c)
-	case "gost_start":
-		a.ApiService.StartGost(c)
-	case "gost_stop":
-		a.ApiService.StopGost(c)
-	case "gost_delete":
-		a.ApiService.DeleteGost(c)
-	case "linkConvert":
-		a.ApiService.LinkConvert(c)
-	case "importdb":
-		a.ApiService.ImportDb(c)
-	case "addToken":
-		a.ApiService.AddToken(c)
-		a.apiv2.ReloadTokens()
-	case "deleteToken":
-		a.ApiService.DeleteToken(c)
-		a.apiv2.ReloadTokens()
 	default:
 		jsonMsg(c, "failed", common.NewError("unknown action: ", action))
 	}
@@ -213,8 +219,27 @@ func (a *APIHandler) getHandler(c *gin.Context) {
 		a.ApiService.GetDb(c)
 	case "tokens":
 		a.ApiService.GetTokens(c)
-	case "gosts":
-		a.ApiService.GetGosts(c)
+	case "mtpros":
+		proxies, err := a.ApiService.GetAllMTProtoProxies()
+		if err != nil {
+			jsonMsg(c, "mtpros", err)
+			return
+		}
+		jsonObj(c, proxies, nil)
+	case "gres":
+		tunnels, err := a.ApiService.GetAllGreTunnels()
+		if err != nil {
+			jsonMsg(c, "gres", err)
+			return
+		}
+		jsonObj(c, tunnels, nil)
+	case "taps":
+		tunnels, err := a.ApiService.GetAllTapTunnels()
+		if err != nil {
+			jsonMsg(c, "taps", err)
+			return
+		}
+		jsonObj(c, tunnels, nil)
 	default:
 		jsonMsg(c, "failed", common.NewError("unknown action: ", action))
 	}

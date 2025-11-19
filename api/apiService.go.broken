@@ -15,6 +15,32 @@ import (
 )
 
 type ApiService struct {
+	"encoding/json"
+	"strconv"
+	"time"
+
+	"github.com/alireza0/s-ui/database"
+	"github.com/alireza0/s-ui/database/model"
+	"github.com/alireza0/s-ui/logger"
+	"github.com/alireza0/s-ui/service"
+	"github.com/alireza0/s-ui/util"
+
+	"github.com/gin-gonic/gin"
+)
+	"encoding/json"
+	"strconv"
+	"time"
+
+	"github.com/alireza0/s-ui/database"
+	"github.com/alireza0/s-ui/database/model"
+	"github.com/alireza0/s-ui/logger"
+	"github.com/alireza0/s-ui/service"
+	"github.com/alireza0/s-ui/util"
+
+	"github.com/gin-gonic/gin"
+)
+
+type ApiService struct {
 	service.SettingService
 	service.UserService
 	service.ConfigService
@@ -29,9 +55,6 @@ type ApiService struct {
 	service.ServerService
 	service.ChiselService
 	service.GostService
-	service.MTProtoService
-	service.GreService
-	service.TapService
 }
 
 func (a *ApiService) LoadData(c *gin.Context) {
@@ -96,18 +119,6 @@ func (a *ApiService) getData(c *gin.Context) (interface{}, error) {
 		if err != nil {
 			return "", err
 		}
-		mtprotoConfigs, err := a.MTProtoService.GetAllMTProtoProxies()
-		if err != nil {
-			return "", err
-		}
-		greConfigs, err := a.GreService.GetAllGreTunnels()
-		if err != nil {
-			return "", err
-		}
-		tapConfigs, err := a.TapService.GetAllTapTunnels()
-		if err != nil {
-			return "", err
-		}
 		subURI, err := a.SettingService.GetFinalSubURI(getHostname(c))
 		if err != nil {
 			return "", err
@@ -124,9 +135,6 @@ func (a *ApiService) getData(c *gin.Context) (interface{}, error) {
 		data["endpoints"] = endpoints
 		data["services"] = services
 		data["chisel"] = chiselConfigs
-		data["mtproto"] = mtprotoConfigs
-		data["gre"] = greConfigs
-		data["tap"] = tapConfigs
 		data["subURI"] = subURI
 		data["enableTraffic"] = trafficAge > 0
 		data["onlines"] = onlines
@@ -173,24 +181,6 @@ func (a *ApiService) LoadPartialData(c *gin.Context, objs []string) error {
 				return err
 			}
 			data[obj] = chiselConfigs
-		case "mtproto":
-			mtprotoConfigs, err := a.MTProtoService.GetAllMTProtoProxies()
-			if err != nil {
-				return err
-			}
-			data[obj] = mtprotoConfigs
-		case "gre":
-			greConfigs, err := a.GreService.GetAllGreTunnels()
-			if err != nil {
-				return err
-			}
-			data[obj] = greConfigs
-		case "tap":
-			tapConfigs, err := a.TapService.GetAllTapTunnels()
-			if err != nil {
-				return err
-			}
-			data[obj] = tapConfigs
 		case "tls":
 			tlsConfigs, err := a.TlsService.GetAll()
 			if err != nil {
@@ -339,6 +329,7 @@ func (a *ApiService) ChangePass(c *gin.Context) {
 	newPass := c.Request.FormValue("newPass")
 	err := a.UserService.ChangePass(id, oldPass, newUsername, newPass)
 	if err == nil {
+		logger.Info("change user credentials success")
 		jsonMsg(c, "save", nil)
 	} else {
 		logger.Warning("change user credentials failed:", err)
@@ -519,4 +510,406 @@ func (a *ApiService) DeleteGost(c *gin.Context) {
 		return
 	}
 	jsonMsg(c, "gost_delete", nil)
+}
+
+// GOST API methods
+func (a *ApiService) GetGosts(c *gin.Context) {
+	configs, err := a.GostService.GetAllGostConfigs()
+	if err != nil {
+		jsonMsg(c, "gosts", err)
+		return
+	}
+	jsonObj(c, map[string]interface{}{"gosts": configs}, nil)
+}
+
+func (a *ApiService) SaveGost(c *gin.Context) {
+	action := c.Request.FormValue("action")
+	data := c.Request.FormValue("data")
+	if action == "new" {
+		var cfg model.GostConfig
+		if err := json.Unmarshal([]byte(data), &cfg); err != nil {
+			jsonMsg(c, "gost_save", err)
+			return
+		}
+		if err := a.GostService.CreateGostConfig(&cfg); err != nil {
+			jsonMsg(c, "gost_save", err)
+			return
+		}
+		jsonMsg(c, "gost_save", nil)
+	}
+}
+
+func (a *ApiService) UpdateGost(c *gin.Context) {
+	data := c.Request.FormValue("data")
+	var cfg model.GostConfig
+	if err := json.Unmarshal([]byte(data), &cfg); err != nil {
+		jsonMsg(c, "gost_update", err)
+		return
+	}
+	var orig model.GostConfig
+	if err := database.GetDB().Model(&orig).Where("id = ?", cfg.ID).First(&orig).Error; err != nil {
+		jsonMsg(c, "gost_update", err)
+		return
+	}
+	if err := database.GetDB().Model(&orig).Updates(&cfg).Error; err != nil {
+		jsonMsg(c, "gost_update", err)
+		return
+	}
+	jsonMsg(c, "gost_update", nil)
+}
+
+func (a *ApiService) StartGost(c *gin.Context) {
+	data := c.Request.FormValue("data")
+	var cfg model.GostConfig
+	if err := json.Unmarshal([]byte(data), &cfg); err != nil {
+		jsonMsg(c, "gost_start", err)
+		return
+	}
+	var orig model.GostConfig
+	if err := database.GetDB().Model(&orig).Where("id = ?", cfg.ID).First(&orig).Error; err != nil {
+		jsonMsg(c, "gost_start", err)
+		return
+	}
+	if err := a.GostService.StartGost(&orig); err != nil {
+		jsonMsg(c, "gost_start", err)
+		return
+	}
+	jsonMsg(c, "gost_start", nil)
+}
+
+func (a *ApiService) StopGost(c *gin.Context) {
+	idStr := c.Request.FormValue("id")
+	idI, err := strconv.Atoi(idStr)
+	if err != nil {
+		jsonMsg(c, "gost_stop", err)
+		return
+	}
+	if err := a.GostService.StopGost(uint(idI)); err != nil {
+		jsonMsg(c, "gost_stop", err)
+		return
+	}
+	jsonMsg(c, "gost_stop", nil)
+}
+
+func (a *ApiService) DeleteGost(c *gin.Context) {
+	idStr := c.Request.FormValue("id")
+	idI, err := strconv.Atoi(idStr)
+	if err != nil {
+		jsonMsg(c, "gost_delete", err)
+		return
+	}
+	if err := a.GostService.DeleteGostConfig(uint(idI)); err != nil {
+		jsonMsg(c, "gost_delete", err)
+		return
+	}
+	jsonMsg(c, "gost_delete", nil)
+}
+
+	if err != nil {
+		jsonMsg(c, "mtprotos", err)
+		return
+	}
+	jsonObj(c, map[string]interface{}{"mtprotos": configs}, nil)
+}
+
+func (a *ApiService) SaveMTProto(c *gin.Context) {
+	action := c.Request.FormValue("action")
+	data := c.Request.FormValue("data")
+	if action == "new" {
+		var cfg model.MTProtoProxyConfig
+		if err := json.Unmarshal([]byte(data), &cfg); err != nil {
+			jsonMsg(c, "mtproto_save", err)
+			return
+		}
+		if err := a.MTProtoService.CreateMTProtoConfig(&cfg); err != nil {
+			jsonMsg(c, "mtproto_save", err)
+			return
+		}
+		jsonMsg(c, "mtproto_save", nil)
+		return
+	}
+	jsonMsg(c, "mtproto_save", common.NewError("unknown action", action))
+}
+
+func (a *ApiService) UpdateMTProto(c *gin.Context) {
+	idStr := c.Request.FormValue("id")
+	data := c.Request.FormValue("data")
+	idI, err := strconv.Atoi(idStr)
+	if err != nil {
+		jsonMsg(c, "mtproto_update", err)
+		return
+	}
+	var cfg model.MTProtoProxyConfig
+	if err := json.Unmarshal([]byte(data), &cfg); err != nil {
+		jsonMsg(c, "mtproto_update", err)
+		return
+	}
+	db := database.GetDB()
+	var orig model.MTProtoProxyConfig
+	if db.First(&orig, idI).Error != nil {
+		jsonMsg(c, "mtproto_update", common.NewError("mtproto config not found"))
+		return
+	}
+	cfg.ID = orig.ID
+	if err := db.Model(&orig).Updates(cfg).Error; err != nil {
+		jsonMsg(c, "mtproto_update", err)
+		return
+	}
+	jsonMsg(c, "mtproto_update", nil)
+}
+
+func (a *ApiService) StartMTProto(c *gin.Context) {
+	idStr := c.Request.FormValue("id")
+	idI, err := strconv.Atoi(idStr)
+	if err != nil {
+		jsonMsg(c, "mtproto_start", err)
+		return
+	}
+	var cfg model.MTProtoProxyConfig
+	db := database.GetDB()
+	if db.First(&cfg, idI).Error != nil {
+		jsonMsg(c, "mtproto_start", common.NewError("mtproto config not found"))
+		return
+	}
+	if err := a.MTProtoService.StartMTProto(&cfg); err != nil {
+		jsonMsg(c, "mtproto_start", err)
+		return
+	}
+	jsonMsg(c, "mtproto_start", nil)
+}
+
+func (a *ApiService) StopMTProto(c *gin.Context) {
+	idStr := c.Request.FormValue("id")
+	idI, err := strconv.Atoi(idStr)
+	if err != nil {
+		jsonMsg(c, "mtproto_stop", err)
+		return
+	}
+	if err := a.MTProtoService.StopMTProto(uint(idI)); err != nil {
+		jsonMsg(c, "mtproto_stop", err)
+		return
+	}
+	jsonMsg(c, "mtproto_stop", nil)
+}
+
+func (a *ApiService) DeleteMTProto(c *gin.Context) {
+	idStr := c.Request.FormValue("id")
+	idI, err := strconv.Atoi(idStr)
+	if err != nil {
+		jsonMsg(c, "mtproto_delete", err)
+		return
+	}
+	if err := a.MTProtoService.DeleteMTProtoConfig(uint(idI)); err != nil {
+		jsonMsg(c, "mtproto_delete", err)
+		return
+	}
+	jsonMsg(c, "mtproto_delete", nil)
+}
+
+// GRE API methods
+func (a *ApiService) GetGres(c *gin.Context) {
+	configs, err := a.GreService.GetAllGreConfigs()
+	if err != nil {
+		jsonMsg(c, "gres", err)
+		return
+	}
+	jsonObj(c, map[string]interface{}{"gres": configs}, nil)
+}
+
+func (a *ApiService) SaveGre(c *gin.Context) {
+	action := c.Request.FormValue("action")
+	data := c.Request.FormValue("data")
+	if action == "new" {
+		var cfg model.GreConfig
+		if err := json.Unmarshal([]byte(data), &cfg); err != nil {
+			jsonMsg(c, "gre_save", err)
+			return
+		}
+		if err := a.GreService.CreateGreConfig(&cfg); err != nil {
+			jsonMsg(c, "gre_save", err)
+			return
+		}
+		jsonMsg(c, "gre_save", nil)
+		return
+	}
+	jsonMsg(c, "gre_save", common.NewError("unknown action", action))
+}
+
+func (a *ApiService) UpdateGre(c *gin.Context) {
+	idStr := c.Request.FormValue("id")
+	data := c.Request.FormValue("data")
+	idI, err := strconv.Atoi(idStr)
+	if err != nil {
+		jsonMsg(c, "gre_update", err)
+		return
+	}
+	var cfg model.GreConfig
+	if err := json.Unmarshal([]byte(data), &cfg); err != nil {
+		jsonMsg(c, "gre_update", err)
+		return
+	}
+	db := database.GetDB()
+	var orig model.GreConfig
+	if db.First(&orig, idI).Error != nil {
+		jsonMsg(c, "gre_update", common.NewError("gre config not found"))
+		return
+	}
+	cfg.ID = orig.ID
+	if err := db.Model(&orig).Updates(cfg).Error; err != nil {
+		jsonMsg(c, "gre_update", err)
+		return
+	}
+	jsonMsg(c, "gre_update", nil)
+}
+
+func (a *ApiService) StartGre(c *gin.Context) {
+	idStr := c.Request.FormValue("id")
+	idI, err := strconv.Atoi(idStr)
+	if err != nil {
+		jsonMsg(c, "gre_start", err)
+		return
+	}
+	var cfg model.GreConfig
+	db := database.GetDB()
+	if db.First(&cfg, idI).Error != nil {
+		jsonMsg(c, "gre_start", common.NewError("gre config not found"))
+		return
+	}
+	if err := a.GreService.StartGre(&cfg); err != nil {
+		jsonMsg(c, "gre_start", err)
+		return
+	}
+	jsonMsg(c, "gre_start", nil)
+}
+
+func (a *ApiService) StopGre(c *gin.Context) {
+	idStr := c.Request.FormValue("id")
+	idI, err := strconv.Atoi(idStr)
+	if err != nil {
+		jsonMsg(c, "gre_stop", err)
+		return
+	}
+	if err := a.GreService.StopGre(uint(idI)); err != nil {
+		jsonMsg(c, "gre_stop", err)
+		return
+	}
+	jsonMsg(c, "gre_stop", nil)
+}
+
+func (a *ApiService) DeleteGre(c *gin.Context) {
+	idStr := c.Request.FormValue("id")
+	idI, err := strconv.Atoi(idStr)
+	if err != nil {
+		jsonMsg(c, "gre_delete", err)
+		return
+	}
+	if err := a.GreService.DeleteGreConfig(uint(idI)); err != nil {
+		jsonMsg(c, "gre_delete", err)
+		return
+	}
+	jsonMsg(c, "gre_delete", nil)
+}
+
+// TAP API methods
+func (a *ApiService) GetTaps(c *gin.Context) {
+	configs, err := a.TapService.GetAllTapConfigs()
+	if err != nil {
+		jsonMsg(c, "taps", err)
+		return
+	}
+	jsonObj(c, map[string]interface{}{"taps": configs}, nil)
+}
+
+func (a *ApiService) SaveTap(c *gin.Context) {
+	action := c.Request.FormValue("action")
+	data := c.Request.FormValue("data")
+	if action == "new" {
+		var cfg model.TapConfig
+		if err := json.Unmarshal([]byte(data), &cfg); err != nil {
+			jsonMsg(c, "tap_save", err)
+			return
+		}
+		if err := a.TapService.CreateTapConfig(&cfg); err != nil {
+			jsonMsg(c, "tap_save", err)
+			return
+		}
+		jsonMsg(c, "tap_save", nil)
+		return
+	}
+	jsonMsg(c, "tap_save", common.NewError("unknown action", action))
+}
+
+func (a *ApiService) UpdateTap(c *gin.Context) {
+	idStr := c.Request.FormValue("id")
+	data := c.Request.FormValue("data")
+	idI, err := strconv.Atoi(idStr)
+	if err != nil {
+		jsonMsg(c, "tap_update", err)
+		return
+	}
+	var cfg model.TapConfig
+	if err := json.Unmarshal([]byte(data), &cfg); err != nil {
+		jsonMsg(c, "tap_update", err)
+		return
+	}
+	db := database.GetDB()
+	var orig model.TapConfig
+	if db.First(&orig, idI).Error != nil {
+		jsonMsg(c, "tap_update", common.NewError("tap config not found"))
+		return
+	}
+	cfg.ID = orig.ID
+	if err := db.Model(&orig).Updates(cfg).Error; err != nil {
+		jsonMsg(c, "tap_update", err)
+		return
+	}
+	jsonMsg(c, "tap_update", nil)
+}
+
+func (a *ApiService) StartTap(c *gin.Context) {
+	idStr := c.Request.FormValue("id")
+	idI, err := strconv.Atoi(idStr)
+	if err != nil {
+		jsonMsg(c, "tap_start", err)
+		return
+	}
+	var cfg model.TapConfig
+	db := database.GetDB()
+	if db.First(&cfg, idI).Error != nil {
+		jsonMsg(c, "tap_start", common.NewError("tap config not found"))
+		return
+	}
+	if err := a.TapService.StartTap(&cfg); err != nil {
+		jsonMsg(c, "tap_start", err)
+		return
+	}
+	jsonMsg(c, "tap_start", nil)
+}
+
+func (a *ApiService) StopTap(c *gin.Context) {
+	idStr := c.Request.FormValue("id")
+	idI, err := strconv.Atoi(idStr)
+	if err != nil {
+		jsonMsg(c, "tap_stop", err)
+		return
+	}
+	if err := a.TapService.StopTap(uint(idI)); err != nil {
+		jsonMsg(c, "tap_stop", err)
+		return
+	}
+	jsonMsg(c, "tap_stop", nil)
+}
+
+func (a *ApiService) DeleteTap(c *gin.Context) {
+	idStr := c.Request.FormValue("id")
+	idI, err := strconv.Atoi(idStr)
+	if err != nil {
+		jsonMsg(c, "tap_delete", err)
+		return
+	}
+	if err := a.TapService.DeleteTapConfig(uint(idI)); err != nil {
+		jsonMsg(c, "tap_delete", err)
+		return
+	}
+	jsonMsg(c, "tap_delete", nil)
 }
