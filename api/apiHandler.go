@@ -3,6 +3,7 @@ package api
 import (
 	"strings"
 
+	"github.com/alireza0/s-ui/telegram" // Added import
 	"github.com/alireza0/s-ui/util/common"
 
 	"github.com/gin-gonic/gin"
@@ -11,11 +12,13 @@ import (
 type APIHandler struct {
 	ApiService
 	apiv2 *APIv2Handler
+	services telegram.AppServices // Added
 }
 
-func NewAPIHandler(g *gin.RouterGroup, a2 *APIv2Handler) {
+func NewAPIHandler(g *gin.RouterGroup, services telegram.AppServices) {
 	a := &APIHandler{
-		apiv2: a2,
+		apiv2: NewAPIv2Handler(g, services), // Pass services to APIv2Handler
+		services: services,
 	}
 	a.initRouter(g)
 }

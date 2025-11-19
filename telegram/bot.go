@@ -23,9 +23,10 @@ type AppServices interface {
 	RestartApp()
 	GetConfigService() *service.ConfigService
 	GetChiselService() *service.ChiselService
-	GetMTProtoService() *service.MTProtoService // Added
-	GetGreService() *service.GreService         // Added
-	GetTapService() *service.TapService         // Added
+	GetMTProtoService() *service.MTProtoService
+	GetGreService() *service.GreService
+	GetTapService() *service.TapService
+	GetUdp2rawService() *service.Udp2rawService // Added
 	GetFirstInboundId() (uint, error)
 	GetUserByEmail(email string) (*model.Client, error)
 	GetAllUsers() (*[]model.Client, error)
@@ -157,7 +158,14 @@ func handleCommand(ctx context.Context, b *bot.Bot, message *models.Message) {
 				"/list_tap\n" +
 				"/remove_tap <name>\n" +
 				"/start_tap <name>\n" +
-				"/stop_tap <name>",
+				"/stop_tap <name>\n\n" +
+				"goudp2raw Tunnel Commands:\n" +
+				"/add_udp2raw_client <name> <local_addr> <remote_server_ip> <key> [dscp]\n" +
+				"/add_udp2raw_server <name> <local_addr> <target_udp_service> <key> [dscp]\n" +
+				"/list_udp2raw\n" +
+				"/remove_udp2raw <name>\n" +
+				"/start_udp2raw <name>\n" +
+				"/stop_udp2raw <name>",
 		})
 	case "/adduser":
 		handleAddUser(ctx, b, message, args)
@@ -238,6 +246,19 @@ func handleCommand(ctx context.Context, b *bot.Bot, message *models.Message) {
 		handleStartTap(ctx, b, message, args)
 	case "/stop_tap":
 		handleStopTap(ctx, b, message, args)
+	// goudp2raw Tunnel Commands
+	case "/add_udp2raw_client":
+		handleAddUdp2rawClient(ctx, b, message, args)
+	case "/add_udp2raw_server":
+		handleAddUdp2rawServer(ctx, b, message, args)
+	case "/list_udp2raw":
+		handleListUdp2raw(ctx, b, message)
+	case "/remove_udp2raw":
+		handleRemoveUdp2raw(ctx, b, message, args)
+	case "/start_udp2raw":
+		handleStartUdp2raw(ctx, b, message, args)
+	case "/stop_udp2raw":
+		handleStopUdp2raw(ctx, b, message, args)
 	default:
 		b.SendMessage(ctx, &bot.SendMessageParams{
 			ChatID: message.Chat.ID,
@@ -255,7 +276,7 @@ func handleAddUser(ctx context.Context, b *bot.Bot, message *models.Message, arg
 	email := args[0]
 	trafficGB, err := strconv.ParseInt(args[1], 10, 64)
 	if err != nil {
-		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: "Invalid traffic value. It must be a number."})
+		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: "Invalid traffic value. It must be a number."}) 
 		return
 	}
 
@@ -273,7 +294,7 @@ func handleAddUser(ctx context.Context, b *bot.Bot, message *models.Message, arg
 		inboundID, err = services.GetFirstInboundId()
 		if err != nil {
 			log.Printf("Error getting first inbound ID: %v", err)
-			b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: "Error getting inbound ID."})
+			b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: "Error getting inbound ID."}) 
 			return
 		}
 	}
@@ -281,7 +302,7 @@ func handleAddUser(ctx context.Context, b *bot.Bot, message *models.Message, arg
 	newUUID, err := uuid.NewV4()
 	if err != nil {
 		log.Printf("Error creating UUID: %v", err)
-		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: "Error creating user UUID."})
+		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: "Error creating user UUID."}) 
 		return
 	}
 
@@ -300,7 +321,7 @@ func handleAddUser(ctx context.Context, b *bot.Bot, message *models.Message, arg
 	clientJSON, err := json.Marshal(newClient)
 	if err != nil {
 		log.Printf("Error marshalling client: %v", err)
-		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: "Error preparing user data."})
+		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: "Error preparing user data."}) 
 		return
 	}
 
@@ -331,7 +352,7 @@ func handleDelUser(ctx context.Context, b *bot.Bot, message *models.Message, arg
 	idJson, err := json.Marshal(client.Id)
 	if err != nil {
 		log.Printf("Error marshalling user ID: %v", err)
-		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: "Error preparing user ID for deletion."})
+		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: "Error preparing user ID for deletion."}) 
 		return
 	}
 
@@ -393,7 +414,7 @@ func handleSublink(ctx context.Context, b *bot.Bot, message *models.Message, arg
 		return
 	}
 	if webDomain == "" {
-		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: "Error: Web domain is not configured. Cannot generate subscription links."})
+		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: "Error: Web domain is not configured. Cannot generate subscription links."}) 
 		return
 	}
 	log.Printf("handleSublink: found web domain: %s", webDomain)
@@ -421,7 +442,7 @@ func handleStats(ctx context.Context, b *bot.Bot, message *models.Message) {
 	onlines, err := services.GetOnlines()
 	if err != nil {
 		log.Printf("Error getting online users: %v", err)
-		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: "Error getting online users."})
+		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: "Error getting online users."}) 
 		return
 	}
 
@@ -451,7 +472,7 @@ func handleLogs(ctx context.Context, b *bot.Bot, message *models.Message, args [
 
 	logs := services.GetLogs(limit, level)
 	if len(logs) == 0 {
-		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: "No logs found."})
+		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: "No logs found."}) 
 		return
 	}
 
@@ -468,7 +489,7 @@ func handleAddOutbound(ctx context.Context, b *bot.Bot, message *models.Message,
 
 	jsonData := []byte(strings.Join(args, " "))
 	if !json.Valid(jsonData) {
-		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: "Invalid JSON provided."})
+		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: "Invalid JSON provided."}) 
 		return
 	}
 
@@ -479,7 +500,7 @@ func handleAddOutbound(ctx context.Context, b *bot.Bot, message *models.Message,
 		return
 	}
 
-	b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: "Outbound added successfully."})
+	b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: "Outbound added successfully."}) 
 }
 
 func handleAddInbound(ctx context.Context, b *bot.Bot, message *models.Message, args []string) {
@@ -492,7 +513,7 @@ func handleAddInbound(ctx context.Context, b *bot.Bot, message *models.Message, 
 	tag := args[1]
 	port, err := strconv.Atoi(args[2])
 	if err != nil {
-		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: "Invalid port number."})
+		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: "Invalid port number."}) 
 		return
 	}
 
@@ -506,7 +527,7 @@ func handleAddInbound(ctx context.Context, b *bot.Bot, message *models.Message, 
 	jsonData, err := json.Marshal(inboundConfig)
 	if err != nil {
 		log.Printf("Error marshalling inbound config: %v", err)
-		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: "Error creating inbound configuration."})
+		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: "Error creating inbound configuration."}) 
 		return
 	}
 
@@ -526,7 +547,7 @@ func handleBackup(ctx context.Context, b *bot.Bot, message *models.Message) {
 	dbBytes, err := services.BackupDB("")
 	if err != nil {
 		log.Printf("Error creating backup: %v", err)
-		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: "Error creating backup."})
+		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: "Error creating backup."}) 
 		return
 	}
 
@@ -553,17 +574,17 @@ func handleSetupService(ctx context.Context, b *bot.Bot, message *models.Message
 		"[Install]\n" +
 		"WantedBy=multi-user.target"
 
-	response := fmt.Sprintf("Для настройки сервиса systemd выполните следующие шаги:\n\n"+
-		"**1. Создайте файл сервиса:**\n"+
-		"Создайте файл `/etc/systemd/system/s-ui.service` со следующим содержимым (потребуются права sudo):\n"+
-		"```ini\n%s\n```\n\n"+
-		"**2. Выполните команды в терминале:**\n"+
-		"```bash\n"+
-		"sudo systemctl daemon-reload\n"+
-		"sudo systemctl enable s-ui.service\n"+
-		"sudo systemctl start s-ui.service\n"+
-		"sudo systemctl status s-ui.service\n"+
-		"```\n\n"+
+	response := fmt.Sprintf("Для настройки сервиса systemd выполните следующие шаги:\n\n" +
+		"**1. Создайте файл сервиса:**\n" +
+		"Создайте файл `/etc/systemd/system/s-ui.service` со следующим содержимым (потребуются права sudo):\n" +
+		"```ini\n%s\n```\n\n" +
+		"**2. Выполните команды в терминале:**\n" +
+		"```bash\n" +
+		"sudo systemctl daemon-reload\n" +
+		"sudo systemctl enable s-ui.service\n" +
+		"sudo systemctl start s-ui.service\n" +
+		"sudo systemctl status s-ui.service\n" +
+		"```\n\n" +
 		"После этого приложение будет запускаться как сервис в системе", serviceContent)
 
 	b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: response})
@@ -573,12 +594,12 @@ func handleListUsers(ctx context.Context, b *bot.Bot, message *models.Message) {
 	clients, err := services.GetAllUsers()
 	if err != nil {
 		log.Printf("Error getting all users: %v", err)
-		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: "Error getting users."})
+		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: "Error getting users."}) 
 		return
 	}
 
 	if len(*clients) == 0 {
-		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: "No users found."})
+		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: "No users found."}) 
 		return
 	}
 
@@ -608,7 +629,7 @@ func handleAddChiselServer(ctx context.Context, b *bot.Bot, message *models.Mess
 	name := args[0]
 	port, err := strconv.Atoi(args[1])
 	if err != nil {
-		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: "Invalid port number."})
+		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: "Invalid port number."}) 
 		return
 	}
 
@@ -655,13 +676,13 @@ func handleAddChiselClient(ctx context.Context, b *bot.Bot, message *models.Mess
 
 	serverParts := strings.Split(serverAddr, ":")
 	if len(serverParts) != 2 {
-		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: "Invalid server address format. Use <server:port>."})
+		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: "Invalid server address format. Use <server:port>."}) 
 		return
 	}
 	serverHost := serverParts[0]
 	serverPort, err := strconv.Atoi(serverParts[1])
 	if err != nil {
-		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: "Invalid server port."})
+		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: "Invalid server port."}) 
 		return
 	}
 
@@ -736,12 +757,12 @@ func handleListChisel(ctx context.Context, b *bot.Bot, message *models.Message) 
 	configs, err := chiselService.GetAllChiselConfigs()
 	if err != nil {
 		log.Printf("Error getting chisel configs: %v", err)
-		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: "Error getting chisel configs."})
+		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: "Error getting chisel configs."}) 
 		return
 	}
 
 	if len(configs) == 0 {
-		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: "No Chisel services configured."})
+		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: "No Chisel services configured."}) 
 		return
 	}
 
@@ -862,12 +883,12 @@ func handleListInbounds(ctx context.Context, b *bot.Bot, message *models.Message
 	inbounds, err := services.GetAllInbounds()
 	if err != nil {
 		log.Printf("Error getting all inbounds: %v", err)
-		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: "Error getting inbounds."})
+		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: "Error getting inbounds."}) 
 		return
 	}
 
 	if len(inbounds) == 0 {
-		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: "No inbounds configured."})
+		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: "No inbounds configured."}) 
 		return
 	}
 
@@ -884,12 +905,12 @@ func handleListOutbounds(ctx context.Context, b *bot.Bot, message *models.Messag
 	outbounds, err := services.GetAllOutbounds()
 	if err != nil {
 		log.Printf("Error getting all outbounds: %v", err)
-		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: "Error getting outbounds."})
+		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: "Error getting outbounds."}) 
 		return
 	}
 
 	if len(outbounds) == 0 {
-		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: "No outbounds configured."})
+		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: "No outbounds configured."}) 
 		return
 	}
 
@@ -912,7 +933,7 @@ func handleAddMTProto(ctx context.Context, b *bot.Bot, message *models.Message, 
 	name := args[0]
 	port, err := strconv.Atoi(args[1])
 	if err != nil {
-		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: "Invalid port number."})
+		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: "Invalid port number."}) 
 		return
 	}
 	secret := args[2]
@@ -952,12 +973,12 @@ func handleListMTProto(ctx context.Context, b *bot.Bot, message *models.Message)
 	configs, err := mtprotoService.GetAllMTProtoProxies()
 	if err != nil {
 		log.Printf("Error getting MTProto Proxy configs: %v", err)
-		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: "Error getting MTProto Proxy configs."})
+		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: "Error getting MTProto Proxy configs."}) 
 		return
 	}
 
 	if len(configs) == 0 {
-		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: "No MTProto Proxy services configured."})
+		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: "No MTProto Proxy services configured."}) 
 		return
 	}
 
@@ -1115,12 +1136,12 @@ func handleListGre(ctx context.Context, b *bot.Bot, message *models.Message) {
 	configs, err := greService.GetAllGreTunnels()
 	if err != nil {
 		log.Printf("Error getting GRE Tunnel configs: %v", err)
-		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: "Error getting GRE Tunnel configs."})
+		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: "Error getting GRE Tunnel configs."}) 
 		return
 	}
 
 	if len(configs) == 0 {
-		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: "No GRE Tunnel services configured."})
+		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: "No GRE Tunnel services configured."}) 
 		return
 	}
 
@@ -1268,12 +1289,12 @@ func handleListTap(ctx context.Context, b *bot.Bot, message *models.Message) {
 	configs, err := tapService.GetAllTapTunnels()
 	if err != nil {
 		log.Printf("Error getting TAP Tunnel configs: %v", err)
-		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: "Error getting TAP Tunnel configs."})
+		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: "Error getting TAP Tunnel configs."}) 
 		return
 	}
 
 	if len(configs) == 0 {
-		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: "No TAP Tunnel services configured."})
+		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: "No TAP Tunnel services configured."}) 
 		return
 	}
 
@@ -1401,9 +1422,232 @@ func handleGetSubDomain(ctx context.Context, b *bot.Bot, message *models.Message
 		return
 	}
 	if domain == "" {
-		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: "Subscription domain is not set. Using default web domain."})
+		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: "Subscription domain is not set. Using default web domain."}) 
 	} else {
 		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: fmt.Sprintf("Current subscription domain: %s", domain)})
 	}
 }
 
+// goudp2raw Tunnel Handlers
+func handleAddUdp2rawClient(ctx context.Context, b *bot.Bot, message *models.Message, args []string) {
+	if len(args) < 4 || len(args) > 5 {
+		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: "Usage: /add_udp2raw_client <name> <local_addr> <remote_server_ip> <key> [dscp]"})
+		return
+	}
+
+	name := args[0]
+	localAddr := args[1]
+	remoteServerIP := args[2]
+	key := args[3]
+	dscp := 0
+	if len(args) == 5 {
+		var err error
+		dscp, err = strconv.Atoi(args[4])
+		if err != nil {
+			b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: "Invalid DSCP value. It must be a number."}) 
+			return
+		}
+	}
+
+	config := model.Udp2rawConfig{
+		Name:       name,
+		Mode:       "client",
+		LocalAddr:  localAddr,
+		RemoteAddr: remoteServerIP,
+		Key:        key,
+		RawMode:    "icmp", // Default to ICMP for now
+		DSCP:       dscp,
+		Status:     "stopped",
+	}
+
+	udp2rawService := services.GetUdp2rawService()
+	if err := udp2rawService.Save(&config); err != nil {
+		log.Printf("Error creating goudp2raw client config: %v", err)
+		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: fmt.Sprintf("Error creating config: %v", err)})
+		return
+	}
+
+	b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: fmt.Sprintf("goudp2raw client config '%s' created. Starting...", name)})
+
+	if err := udp2rawService.Start(&config); err != nil {
+		log.Printf("Error starting goudp2raw client: %v", err)
+		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: fmt.Sprintf("Error starting client: %v", err)})
+		return
+	}
+
+	b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: fmt.Sprintf("goudp2raw client '%s' started successfully.", name)})
+}
+
+func handleAddUdp2rawServer(ctx context.Context, b *bot.Bot, message *models.Message, args []string) {
+	if len(args) < 4 || len(args) > 5 {
+		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: "Usage: /add_udp2raw_server <name> <local_addr> <target_udp_service> <key> [dscp]"})
+		return
+	}
+
+	name := args[0]
+	localAddr := args[1]
+	targetUdpService := args[2]
+	key := args[3]
+	dscp := 0
+	if len(args) == 5 {
+		var err error
+		dscp, err = strconv.Atoi(args[4])
+		if err != nil {
+			b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: "Invalid DSCP value. It must be a number."}) 
+			return
+		}
+	}
+
+	config := model.Udp2rawConfig{
+		Name:       name,
+		Mode:       "server",
+		LocalAddr:  localAddr,
+		RemoteAddr: targetUdpService,
+		Key:        key,
+		RawMode:    "icmp", // Default to ICMP for now
+		DSCP:       dscp,
+		Status:     "stopped",
+	}
+
+	udp2rawService := services.GetUdp2rawService()
+	if err := udp2rawService.Save(&config); err != nil {
+		log.Printf("Error creating goudp2raw server config: %v", err)
+		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: fmt.Sprintf("Error creating config: %v", err)})
+		return
+	}
+
+	b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: fmt.Sprintf("goudp2raw server config '%s' created. Starting...", name)})
+
+	if err := udp2rawService.Start(&config); err != nil {
+		log.Printf("Error starting goudp2raw server: %v", err)
+		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: fmt.Sprintf("Error starting server: %v", err)})
+		return
+	}
+
+	b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: fmt.Sprintf("goudp2raw server '%s' started successfully.", name)})
+}
+
+func handleListUdp2raw(ctx context.Context, b *bot.Bot, message *models.Message) {
+	udp2rawService := services.GetUdp2rawService()
+	configs, err := udp2rawService.GetAll()
+	if err != nil {
+		log.Printf("Error getting goudp2raw configs: %v", err)
+		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: "Error getting goudp2raw configs."}) 
+		return
+	}
+
+	if len(configs) == 0 {
+		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: "No goudp2raw tunnels configured."}) 
+		return
+	}
+
+	var response strings.Builder
+	response.WriteString("Configured goudp2raw Tunnels:\n")
+	for _, config := range configs {
+		response.WriteString(fmt.Sprintf("\n- Name: %s\n", config.Name))
+		response.WriteString(fmt.Sprintf("  Mode: %s\n", config.Mode))
+		response.WriteString(fmt.Sprintf("  Local Addr: %s\n", config.LocalAddr))
+		response.WriteString(fmt.Sprintf("  Remote Addr: %s\n", config.RemoteAddr))
+		response.WriteString(fmt.Sprintf("  Raw Mode: %s\n", config.RawMode))
+		if config.DSCP > 0 {
+			response.WriteString(fmt.Sprintf("  DSCP: %d\n", config.DSCP))
+		}
+		if len(config.Args) > 2 { // Check if it's not just "{}"
+			response.WriteString(fmt.Sprintf("  Extra Args: %s\n", string(config.Args)))
+		}
+		response.WriteString(fmt.Sprintf("  Status: %s (PID: %d)\n", config.Status, config.PID))
+	}
+
+	b.SendMessage(ctx, &bot.SendMessageParams{
+		ChatID: message.Chat.ID,
+		Text:   response.String(),
+	})
+}
+
+func handleRemoveUdp2raw(ctx context.Context, b *bot.Bot, message *models.Message, args []string) {
+	if len(args) != 1 {
+		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: "Usage: /remove_udp2raw <name>"})
+		return
+	}
+	name := args[0]
+	udp2rawService := services.GetUdp2rawService()
+	config, err := udp2rawService.Get(name)
+	if err != nil {
+		log.Printf("Error getting goudp2raw config by name %s: %v", name, err)
+		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: fmt.Sprintf("Config with name '%s' not found.", name)})
+		return
+	}
+
+	if config.PID != 0 {
+		if err := udp2rawService.Stop(config); err != nil {
+			log.Printf("Error stopping goudp2raw service %s during removal (will attempt deletion anyway): %v", name, err)
+			b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: fmt.Sprintf("Tunnel '%s' was running, attempted to stop it before removal. It will be removed anyway.", name)})
+		} else {
+			b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: fmt.Sprintf("Tunnel '%s' stopped.", name)})
+		}
+	}
+
+	if err := udp2rawService.Delete(name); err != nil {
+		log.Printf("Error deleting goudp2raw config %s: %v", name, err)
+		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: fmt.Sprintf("Failed to delete config '%s': %v", name, err)})
+		return
+	}
+
+	b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: fmt.Sprintf("goudp2raw config '%s' removed successfully.", name)})
+}
+
+func handleStartUdp2raw(ctx context.Context, b *bot.Bot, message *models.Message, args []string) {
+	if len(args) != 1 {
+		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: "Usage: /start_udp2raw <name>"})
+		return
+	}
+	name := args[0]
+	udp2rawService := services.GetUdp2rawService()
+	config, err := udp2rawService.Get(name)
+	if err != nil {
+		log.Printf("Error getting goudp2raw config by name %s: %v", name, err)
+		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: fmt.Sprintf("Config with name '%s' not found.", name)})
+		return
+	}
+
+	if config.PID != 0 {
+		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: fmt.Sprintf("goudp2raw tunnel '%s' is already running.", name)})
+		return
+	}
+
+	if err := udp2rawService.Start(config); err != nil {
+		log.Printf("Error starting goudp2raw tunnel %s: %v", name, err)
+		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: fmt.Sprintf("Error starting tunnel '%s': %v", name, err)})
+		return
+	}
+
+	b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: fmt.Sprintf("goudp2raw tunnel '%s' started successfully.", name)})
+}
+
+func handleStopUdp2raw(ctx context.Context, b *bot.Bot, message *models.Message, args []string) {
+	if len(args) != 1 {
+		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: "Usage: /stop_udp2raw <name>"})
+		return
+	}
+	name := args[0]
+	udp2rawService := services.GetUdp2rawService()
+	config, err := udp2rawService.Get(name)
+	if err != nil {
+		log.Printf("Error getting goudp2raw config by name %s: %v", name, err)
+		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: fmt.Sprintf("Config with name '%s' not found.", name)})
+		return
+	}
+
+	if config.PID == 0 {
+		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: fmt.Sprintf("goudp2raw tunnel '%s' is not running.", name)})
+		return
+	}
+
+	if err := udp2rawService.Stop(config); err != nil {
+		log.Printf("Error stopping goudp2raw tunnel %s: %v", name, err)
+		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: fmt.Sprintf("Error stopping tunnel '%s': %v", name, err)})
+		return
+	}
+
+	b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: fmt.Sprintf("goudp2raw tunnel '%s' stopped successfully.", name)})
+}

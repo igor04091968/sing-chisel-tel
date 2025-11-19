@@ -390,6 +390,102 @@ The `s-ui` application now supports managing MTProto Proxies for Telegram, allow
 For the full functionality of GRE, TAP, and MTProto Proxy management, the `s-ui` application requires elevated privileges.
 
 -   **GRE and TAP Tunneling:** Creating and configuring kernel-level network interfaces (GRE) and fully configuring TAP interfaces (assigning IP, MTU, bringing up) requires `CAP_NET_ADMIN` capability.
--   **MTProto Proxy (External Process):** While the `mtg` binary itself might not always need `root` (e.g., if listening on a non-privileged port > 1024), `s-ui`'s ability to manage external processes and potentially bind `mtg` to privileged ports (like 443) might necessitate running `s-ui` with elevated privileges or proper `setcap` configuration for the `sui` binary.
+-   **MTProto Proxy (External Process):** While the `mtg` binary itself might not always need `root` (e.g., if listening on a non-privileged port > 1024), `s-ui`'s ability to manage external processes and potentially bind to privileged ports (like 443) might necessitate running `s-ui` with elevated privileges or proper `setcap` configuration for the `sui` binary.
 
 **Recommendation:** It is recommended to run the `sui` executable with `root` privileges or configure appropriate Linux capabilities (e.g., `sudo setcap cap_net_admin,cap_net_bind_service=+ep /path/to/sui`) if fine-grained control is desired.
+
+## 13. goudp2raw Library Integration
+
+The `goudp2raw` library has been integrated into the `s-ui` project to provide encrypted UDP tunneling over raw ICMP packets with QoS marking capabilities.
+
+### 13.1. goudp2raw Library Overview
+
+`goudp2raw` is a standalone Go library located at `./goudp2raw` within the `s-ui` project. It provides:
+-   **Encrypted ICMP Tunneling:** UDP traffic is encapsulated within ICMP Echo Request/Reply packets and encrypted using AES-CBC.
+-   **Raw Socket Implementation:** Leverages `golang.org/x/net/ipv4` for efficient raw socket operations.
+-   **QoS/DSCP Marking:** Allows setting Differentiated Services Code Point (DSCP) values on outgoing IP packets for traffic prioritization.
+-   **Client/Server Architecture:** Provides separate command-line applications (`goudp2raw-client` and `goudp2raw-server`) for the tunnel client and server.
+
+### 13.2. Building goudp2raw Applications
+
+To build the `goudp2raw` client and server executables:
+
+1.  **Navigate to the `goudp2raw` directory:**
+    ```bash
+    cd /home/igor/gemini_projects/sing-chisel-tel/goudp2raw
+    ```
+2.  **Fetch dependencies:**
+    ```bash
+    go mod tidy
+    ```
+3.  **Build the server application:**
+    ```bash
+    CGO_ENABLED=0 go build -o goudp2raw-server ./cmd/goudp2raw-server
+    ```
+4.  **Build the client application:**
+    ```bash
+    CGO_ENABLED=0 go build -o goudp2raw-client ./cmd/goudp2raw-client
+    ```
+    The `CGO_ENABLED=0` flag ensures static binaries, avoiding Cgo-related linking issues.
+
+### 13.3. Integration into s-ui Backend
+
+The `goudp2raw` library is integrated into `s-ui` through the following components:
+
+-   **`go.mod`:** The `s-ui/go.mod` file includes a `replace` directive (`replace goudp2raw => ./goudp2raw`) to reference the local `goudp2raw` module.
+-   **`model/udp2raw.go`:** Defines the `Udp2rawConfig` struct for storing tunnel configurations in the `s-ui` database. This model includes fields for `Name`, `Mode` (client/server), `LocalAddr`, `RemoteAddr`, `Key`, `RawMode`, `DSCP`, `Args` (as `json.RawMessage`), `Status`, `PID`, and `Remark`.
+-   **`service/udp2raw.go`:** Implements the `Udp2rawService` responsible for:
+    -   CRUD operations on `Udp2rawConfig` in the database.
+    -   Starting and stopping `goudp2raw` client/server processes using `os/exec`.
+    -   Managing the lifecycle of `goudp2raw` tunnels (auto-start on `s-ui` launch, graceful shutdown).
+    -   Logging `goudp2raw` process output.
+-   **`app/app.go`:**
+    -   The `App` struct now includes a `udp2rawService` field.
+    -   The `udp2rawService` is initialized in `app.Init()`.
+    -   `ResetPIDs()` and `StartAllUdp2rawServices()` are called in `app.Start()` to ensure proper tunnel management on application startup.
+    -   `StopAllActiveUdp2rawServices()` is called in `app.Stop()` for graceful shutdown.
+    -   A getter `GetUdp2rawService()` is provided.
+-   **`api/apiV2Handler.go`:**
+    -   The `APIv2Handler` struct includes a `udp2rawAPI` field.
+    -   `udp2rawAPI` is initialized in `NewAPIv2Handler`.
+    -   Its routes are registered in `initRouter`.
+-   **`api/udp2raw.go`:** This file defines the API endpoints (`/api/v2/udp2raw`) for managing `goudp2raw` configurations via the web panel. It includes handlers for `GET`, `POST`, `PUT`, `DELETE`, `start`, and `stop` operations, interacting with `app.GetUdp2rawService()`.
+-   **`util/scanner.go`:** A helper utility to read line-by-line from an `io.Reader`, used by `service/udp2raw.go` for process output logging.
+-   **`telegram/bot.go`:** New Telegram bot commands have been added to manage `goudp2raw` tunnels, including `/add_udp2raw_client`, `/add_udp2raw_server`, `/list_udp2raw`, `/remove_udp2raw`, `/start_udp2raw`, and `/stop_udp2raw`.
+
+### 13.4. Usage via API
+
+The `goudp2raw` tunnels are fully manageable via the `/api/v2/udp2raw` endpoints.
+
+-   **GET /api/v2/udp2raw:** Retrieve all `goudp2raw` configurations.
+-   **POST /api/v2/udp2raw:** Create a new `goudp2raw` configuration.
+-   **GET /api/v2/udp2raw/:id:** Retrieve a specific `goudp2raw` configuration by ID.
+-   **PUT /api/v2/udp2raw/:id:** Update an existing `goudp2raw` configuration.
+-   **DELETE /api/v2/udp2raw/:id:** Delete a `goudp2raw` configuration.
+-   **POST /api/v2/udp2raw/:id/start:** Start a `goudp2raw` tunnel.
+-   **POST /api/v2/udp2raw/:id/stop:** Stop a `goudp2raw` tunnel.
+
+### 13.5. Usage via Telegram Bot
+
+The following Telegram bot commands are available to manage `goudp2raw` tunnels:
+
+-   `/add_udp2raw_client <name> <local_addr> <remote_server_ip> <key> [dscp]`
+-   `/add_udp2raw_server <name> <local_addr> <target_udp_service> <key> [dscp]`
+-   `/list_udp2raw`
+-   `/remove_udp2raw <name>`
+-   `/start_udp2raw <name>`
+-   `/stop_udp2raw <name>`
+
+### 13.6. Frontend (Web UI) Integration Status
+
+The backend API and Telegram bot commands for `goudp2raw` tunnels are fully implemented. However, the frontend (web UI) has not yet been updated to expose these features.
+
+**To integrate `goudp2raw` into the web UI, the following steps are required:**
+
+1.  **Update `frontend/src/types/services.ts`:** Add a new service type for `goudp2raw` and its configuration interface, similar to `CHISEL`.
+2.  **Create a new Vue component (e.g., `frontend/src/components/services/Goudp2raw.vue`):** This component will contain the UI elements for configuring `goudp2raw` tunnels (e.g., local address, remote address, key, DSCP, mode). It would be similar to `Chisel.vue`.
+3.  **Modify `frontend/src/layouts/modals/Service.vue`:**
+    *   Import the new `goudp2raw` service type and the `Goudp2raw.vue` component.
+    *   Add a `v-if` directive to conditionally render the `Goudp2raw.vue` component when `srv.type` is `GOUDP2RAW`.
+    *   Update the `saveChanges` method to use `"udp2raw"` as the `objectType` when `srv.type` is `GOUDP2RAW`.
+    *   Update the `updateData` method to handle loading existing `goudp2raw` configs.

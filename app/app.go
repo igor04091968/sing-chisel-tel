@@ -29,6 +29,7 @@ type APP struct {
 	mtprotoService *service.MTProtoService // Added
 	greService     *service.GreService     // Added
 	tapService     *service.TapService     // Added
+	udp2rawService *service.Udp2rawService // Added
 	webServer      *web.Server
 	subServer      *sub.Server
 	cronJob        *cronjob.CronJob
@@ -60,13 +61,14 @@ func (a *APP) Init() error {
 	a.core = core.NewCore()
 
 	a.cronJob = cronjob.NewCronJob()
-	a.webServer = web.NewServer()
+	a.webServer = web.NewServer(a)
 	a.subServer = sub.NewServer()
 
 	a.chiselService = service.NewChiselService()
 	a.mtprotoService = service.NewMTProtoService() // Added
 	a.greService = service.NewGreService()         // Added
 	a.tapService = service.NewTapService()         // Added
+	a.udp2rawService = service.NewUdp2rawService(database.GetDB()) // Added
 	a.configService = service.NewConfigService(a.core, a.chiselService)
 
 	// --- Add default Chisel client config if none exists ---
@@ -174,6 +176,13 @@ func (a *APP) Start() error {
 	}
 	// --- End auto-start Chisel clients ---
 
+	// --- Auto-start all Udp2raw tunnels ---
+	if err := a.udp2rawService.ResetPIDs(); err != nil {
+		logger.Error("Error resetting Udp2raw PIDs on startup: %v", err)
+	}
+	a.udp2rawService.StartAllUdp2rawServices()
+	// --- End auto-start Udp2raw tunnels ---
+
 	return nil
 }
 
@@ -194,6 +203,9 @@ func (a *APP) Stop() {
 
 	// Stop all active Chisel services
 	a.chiselService.StopAllActiveChiselServices()
+
+	// Stop all active Udp2raw tunnels
+	a.udp2rawService.StopAllActiveUdp2rawServices()
 }
 
 func (a *APP) initLog() {
@@ -307,5 +319,9 @@ func (a *APP) GetGreService() *service.GreService {
 
 func (a *APP) GetTapService() *service.TapService {
 	return a.tapService
+}
+
+func (a *APP) GetUdp2rawService() *service.Udp2rawService {
+	return a.udp2rawService
 }
 

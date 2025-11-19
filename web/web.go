@@ -18,6 +18,7 @@ import (
 	"github.com/alireza0/s-ui/middleware"
 	"github.com/alireza0/s-ui/network"
 	"github.com/alireza0/s-ui/service"
+	"github.com/alireza0/s-ui/telegram" // Added import
 
 	"github.com/gin-contrib/gzip"
 	"github.com/gin-contrib/sessions"
@@ -34,17 +35,20 @@ type Server struct {
 	ctx            context.Context
 	cancel         context.CancelFunc
 	settingService service.SettingService
+	appServices    telegram.AppServices // Added
 }
 
-func NewServer() *Server {
+func NewServer(services telegram.AppServices) *Server {
 	ctx, cancel := context.WithCancel(context.Background())
 	return &Server{
 		ctx:    ctx,
 		cancel: cancel,
+		settingService: services.GetConfigService().SettingService,
+		appServices:    services, // Stored
 	}
 }
 
-func (s *Server) initRouter() (*gin.Engine, error) {
+func (s *Server) initRouter(services telegram.AppServices) (*gin.Engine, error) {
 	if config.IsDebug() {
 		gin.SetMode(gin.DebugMode)
 	} else {
@@ -104,10 +108,10 @@ func (s *Server) initRouter() (*gin.Engine, error) {
 	engine.StaticFS(assetsBasePath, http.FS(assetsFS))
 
 	group_apiv2 := engine.Group(base_url + "apiv2")
-	apiv2 := api.NewAPIv2Handler(group_apiv2)
+	api.NewAPIv2Handler(group_apiv2, services)
 
 	group_api := engine.Group(base_url + "api")
-	api.NewAPIHandler(group_api, apiv2)
+	api.NewAPIHandler(group_api, services)
 
 	// Serve index.html as the entry point
 	// Handle all other routes by serving index.html
@@ -142,7 +146,7 @@ func (s *Server) Start() (err error) {
 		}
 	}()
 
-	engine, err := s.initRouter()
+	engine, err := s.initRouter(s.appServices) // Pass s.appServices here
 	if err != nil {
 		return err
 	}

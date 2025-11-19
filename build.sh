@@ -17,4 +17,4 @@ touch telegram/bot.go
 
 # Build backend
 print_message "\e[36m" "Building backend..."
-go build -x -ldflags "-w -s" -tags "with_quic,with_grpc,with_utls,with_acme,with_gvisor" -o sui main.go
+go build -x -ldflags "-w -s" -tags "with_quic,with_grpc,with_utls,with_acme,with_gvisor,netgo" -o sui main.go

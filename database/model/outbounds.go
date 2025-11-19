@@ -39,9 +39,29 @@ func (o Outbound) MarshalJSON() ([]byte, error) {
 	combined["tag"] = o.Tag
 
 	if o.Options != nil {
-		var restFields map[string]json.RawMessage
+		var restFields map[string]interface{}
 		if err := json.Unmarshal(o.Options, &restFields); err != nil {
 			return nil, err
+		}
+
+		// Check for and handle the 'mark' field for DSCP
+		if markValue, markExists := restFields["mark"]; markExists {
+			delete(restFields, "mark") // Remove mark from top-level
+
+			var dialer map[string]interface{}
+			if dialerJSON, dialerExists := restFields["dialer"]; dialerExists {
+				// If dialer object already exists, unmarshal it
+				if err := json.Unmarshal(dialerJSON.(json.RawMessage), &dialer); err != nil {
+					return nil, err
+				}
+			} else {
+				// If dialer object doesn't exist, create it
+				dialer = make(map[string]interface{})
+			}
+
+			// Add the mark to the dialer object
+			dialer["mark"] = markValue
+			restFields["dialer"] = dialer
 		}
 
 		for k, v := range restFields {

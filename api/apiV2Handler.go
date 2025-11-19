@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/alireza0/s-ui/logger"
+	"github.com/alireza0/s-ui/telegram" // Added import
 	"github.com/alireza0/s-ui/util/common"
 
 	"github.com/gin-gonic/gin"
@@ -21,14 +22,16 @@ type APIv2Handler struct {
 	tokens *[]TokenInMemory
 	greAPI *GreAPI
 	tapAPI *TapAPI
-	mtprotoAPI *MTProtoAPI // Add this line
+	mtprotoAPI *MTProtoAPI
+	udp2rawAPI *Udp2rawAPI
 }
 
-func NewAPIv2Handler(g *gin.RouterGroup) *APIv2Handler {
+func NewAPIv2Handler(g *gin.RouterGroup, services telegram.AppServices) *APIv2Handler {
 	a := &APIv2Handler{
 		greAPI: NewGreAPI(),
 		tapAPI: NewTapAPI(),
-		mtprotoAPI: NewMTProtoAPI(), // Add this line
+		mtprotoAPI: NewMTProtoAPI(),
+		udp2rawAPI: NewUdp2rawAPI(services.GetUdp2rawService()),
 	}
 	a.ReloadTokens()
 	a.initRouter(g)
@@ -55,7 +58,8 @@ func (a *APIv2Handler) initRouter(g *gin.RouterGroup) {
 
 	a.greAPI.RegisterRoutes(g)
 	a.tapAPI.RegisterRoutes(g)
-	a.mtprotoAPI.RegisterRoutes(g) // Add this line
+	a.mtprotoAPI.RegisterRoutes(g)
+	a.udp2rawAPI.RegisterRoutes(g) // Add this line
 }
 
 func (a *APIv2Handler) postHandler(c *gin.Context) {

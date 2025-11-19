@@ -39,6 +39,14 @@
         min="0"
         v-model.number="routingMark"></v-text-field>
       </v-col>
+      <v-col cols="12" sm="6" md="4" v-if="optionMark">
+        <v-text-field
+        label="DSCP Mark"
+        hide-details
+        type="number"
+        min="0"
+        v-model.number="dscpMark"></v-text-field>
+      </v-col>
       <v-col cols="12" sm="6" md="4" v-if="optionRA">
         <v-switch v-model="dial.reuse_addr" color="primary" :label="$t('dial.reuseAddr')" hide-details></v-switch>
       </v-col>
@@ -99,6 +107,9 @@
               <v-switch v-model="optionRM" color="primary" label="Routing Mark" hide-details></v-switch>
             </v-list-item>
             <v-list-item>
+              <v-switch v-model="optionMark" color="primary" label="DSCP Mark" hide-details></v-switch>
+            </v-list-item>
+            <v-list-item>
               <v-switch v-model="optionRA" color="primary" :label="$t('dial.reuseAddr')" hide-details></v-switch>
             </v-list-item>
             <v-list-item>
@@ -140,6 +151,10 @@ export default {
       get() { return this.$props.dial.routing_mark?? 0 },
       set(newValue:number) { this.$props.dial.routing_mark = newValue > 0 ? newValue : 0 }
     },
+    dscpMark: {
+      get() { return this.$props.dial.mark?? 0 },
+      set(newValue:number) { this.$props.dial.mark = newValue > 0 ? newValue : 0 }
+    },
     optionDetour: {
       get(): boolean { return this.$props.dial.detour != undefined },
       set(v:boolean) { v ? this.$props.dial.detour = this.outTags[0]?? '' : delete this.$props.dial.detour }
@@ -159,6 +174,10 @@ export default {
     optionRM: {
       get(): boolean { return this.$props.dial.routing_mark != undefined },
       set(v:boolean) { v ? this.$props.dial.routing_mark = 0 : delete this.$props.dial.routing_mark }
+    },
+    optionMark: {
+      get(): boolean { return this.$props.dial.mark != undefined },
+      set(v:boolean) { v ? this.$props.dial.mark = 0 : delete this.$props.dial.mark }
     },
     optionRA: {
       get(): boolean { return this.$props.dial.reuse_addr != undefined },
