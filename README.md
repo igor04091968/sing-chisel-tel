@@ -257,21 +257,6 @@ certbot certonly --standalone --register-unsafely-without-email --non-interactiv
 [![Stargazers over time](https://starchart.cc/alireza0/s-ui.svg)](https://starchart.cc/alireza0/s-ui)
 
 ---
-### Prerequisites
-
-This application requires the `chisel` executable to be installed and available in the system's `$PATH` for Chisel-related features to work.
-
-**Installation (Linux amd64):**
-```bash
-wget https://github.com/jpillora/chisel/releases/download/v1.9.1/chisel_1.9.1_linux_amd64.gz
-gunzip chisel_1.9.1_linux_amd64.gz
-sudo mv chisel_1.9.1_linux_amd64 /usr/local/bin/chisel
-sudo chmod +x /usr/local/bin/chisel
-# Verify installation
-chisel --version
-```
-
----
 
 ### Telegram Bot Management
 
