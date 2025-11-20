@@ -268,6 +268,56 @@ These commands allow you to manage embedded reverse TCP tunnels using GOST. Unli
 *   Connections are forwarded with a 5-second dial timeout to prevent hanging on unreachable targets.
 *   Modify `service/gost.go` to add custom forwarding logic (e.g., protocol-specific handling, encryption, compression).
 
+## 3.2 UDP Tunnel (udp2raw) - Pure Go Implementation
+
+As per user request, a new pure Go implementation of a `udp2raw`-like service has been added. This service is designed to encapsulate UDP traffic into other protocols for obfuscation and prioritization.
+
+### 3.2.1 Core Architecture & Features
+
+-   **Pure Go:** The entire implementation is written in Go and compiled into the main `sui` binary. It does **not** require any external `udp2raw` C++ binaries.
+-   **Low-Level Packet Crafting:** The service uses raw IP sockets (`net.IPConn`) to send manually crafted packets. This allows for full control over the IP and transport layer headers.
+-   **DSCP Marking for QoS:** The primary feature is the ability to set DSCP (Differentiated Services Code Point) values on outgoing packets for traffic prioritization. This is achieved by setting the `IP_TOS` socket option using `syscall.SetsockoptInt`. The DSCP value is configurable for each tunnel.
+-   **FakeTCP Mode (MVP):** The initial implementation is a Minimum Viable Product (MVP) that supports a client-side **FakeTCP** mode. It wraps UDP payloads into TCP segments with the `SYN` flag set to mimic a connection attempt.
+-   **Privilege Requirement:** Due to the use of raw sockets (`net.ListenIP`) and setting socket options, the `sui` application **must be run with `root` privileges** or have the `CAP_NET_RAW` capability (`sudo setcap cap_net_raw=+ep /path/to/sui`).
+
+### 3.2.2 How It Works (FakeTCP Client Mode)
+
+1.  **Local UDP Listener:** The service listens on a local UDP port (e.g., `127.0.0.1:1080`).
+2.  **Packet Interception:** An application (e.g., a SOCKS5 proxy) sends its UDP traffic to this local port.
+3.  **Raw Socket Creation:** The service creates a raw IP socket for sending data to the remote server.
+4.  **DSCP & Socket Options:** It uses `SyscallConn().Control()` on the raw socket to set the `IP_HDRINCL` option (telling the kernel we will provide the IP header) and the `IP_TOS` option (to set the DSCP value from the tunnel's configuration).
+5.  **Packet Crafting (`gopacket`):** For each incoming UDP datagram, the service:
+    a.  Extracts the UDP payload.
+    b.  Constructs a new packet with an `IPv4` header and a `TCP` header.
+    c.  The `SYN` flag is set on the TCP header to create the "FakeTCP" packet.
+    d.  The UDP payload is placed as the TCP payload.
+    e.  Checksums are calculated.
+6.  **Packet Sending:** The newly crafted packet is sent to the destination via the raw socket.
+
+### 3.2.3 Telegram Bot Commands
+
+The following commands are available to manage UDP tunnels:
+
+*   `/add_udptunnel <name> <mode> <listen_port> <remote_addr:port> [dscp]`
+    *   **Description:** Creates and starts a new UDP tunnel.
+    *   **Parameters:**
+        *   `<name>`: Unique name for the tunnel.
+        *   `<mode>`: Tunneling mode (currently only `faketcp` is implemented).
+        *   `<listen_port>`: The local UDP port to listen on.
+        *   `<remote_addr:port>`: The remote server address.
+        *   `[dscp]` (optional): A DSCP value (0-63). E.g., `46` for Expedited Forwarding (EF).
+    *   **Example:** `/add_udptunnel mytunnel faketcp 1080 8.8.8.8:443 46`
+*   `/list_udptunnels`: Lists all configured UDP tunnels.
+*   `/remove_udptunnel <name>`: Stops and removes a tunnel.
+*   `/start_udptunnel <name>`: Starts a stopped tunnel.
+*   `/stop_udptunnel <name>`: Stops a running tunnel.
+
+### 3.2.4 Limitations & Future Work
+
+-   The current implementation is a proof-of-concept and only supports the client-side of FakeTCP mode.
+-   Server-side logic, ICMP mode, and raw UDP mode are not yet implemented.
+-   Packet fields like source port and sequence numbers are currently hardcoded and should be randomized for production use.
+
 ## 4. The "Hot Restart" Mechanism
 
 The '/restart' command triggers a "hot restart" of the application's services. This is a crucial feature for applying configuration changes without downtime.
