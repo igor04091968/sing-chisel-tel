@@ -44,6 +44,9 @@ func NewAPIHandler(g *gin.RouterGroup, a2 *APIv2Handler, bundle *service.Service
 		if bundle.GostService != nil {
 			a.ApiService.GostService = *bundle.GostService
 		}
+		if bundle.UdpTunnelService != nil {
+			a.ApiService.UdpTunnelService = *bundle.UdpTunnelService
+		}
 	}
 
 	a.initRouter(g)
@@ -236,6 +239,13 @@ func (a *APIHandler) getHandler(c *gin.Context) {
 		tunnels, err := a.ApiService.GetAllTapTunnels()
 		if err != nil {
 			jsonMsg(c, "taps", err)
+			return
+		}
+		jsonObj(c, tunnels, nil)
+	case "udptunnels":
+		tunnels, err := a.ApiService.GetAllUdpTunnels()
+		if err != nil {
+			jsonMsg(c, "udptunnels", err)
 			return
 		}
 		jsonObj(c, tunnels, nil)

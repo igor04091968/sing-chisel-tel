@@ -22,21 +22,22 @@ import (
 
 type APP struct {
 	service.SettingService
-	configService  *service.ConfigService
-	statsService   *service.StatsService
-	serverService  *service.ServerService // New field for server service
-	chiselService  *service.ChiselService
-	gostService    *service.GostService
-	mtprotoService *service.MTProtoEmbeddedService // Updated to embedded version
-	greService     *service.GreService             // Added
-	tapService     *service.TapService             // Added
-	webServer      *web.Server
-	subServer      *sub.Server
-	cronJob        *cronjob.CronJob
-	logger         *logging.Logger
-	core           *core.Core
-	telegramConfig *telegram.Config
-	isBotStarted   bool
+	configService    *service.ConfigService
+	statsService     *service.StatsService
+	serverService    *service.ServerService
+	chiselService    *service.ChiselService
+	gostService      *service.GostService
+	mtprotoService   *service.MTProtoEmbeddedService
+	greService       *service.GreService
+	tapService       *service.TapService
+	udpTunnelService *service.UdpTunnelService
+	webServer        *web.Server
+	subServer        *sub.Server
+	cronJob          *cronjob.CronJob
+	logger           *logging.Logger
+	core             *core.Core
+	telegramConfig   *telegram.Config
+	isBotStarted     bool
 }
 
 func NewApp() *APP {
@@ -66,9 +67,10 @@ func (a *APP) Init() error {
 
 	a.chiselService = service.NewChiselService()
 	a.gostService = service.NewGostService()
-	a.mtprotoService = service.NewMTProtoEmbeddedService() // Updated to embedded version
-	a.greService = service.NewGreService()                 // Added
-	a.tapService = service.NewTapService()                 // Added
+	a.mtprotoService = service.NewMTProtoEmbeddedService()
+	a.greService = service.NewGreService()
+	a.tapService = service.NewTapService()
+	a.udpTunnelService = service.NewUdpTunnelService(database.GetDB())
 	a.configService = service.NewConfigService(a.core, a.chiselService)
 
 	// Initialize lightweight services that don't have complex constructors
@@ -78,19 +80,21 @@ func (a *APP) Init() error {
 	// Provide initialized services to the web server so API handlers can use them
 	if a.webServer != nil {
 		bundle := &service.ServicesBundle{
-			SettingService:  a.SettingService,
-			ConfigService:   a.configService,
-			ClientService:   service.ClientService{},
-			TlsService:      service.TlsService{},
-			InboundService:  service.InboundService{},
-			OutboundService: service.OutboundService{},
-			EndpointService: service.EndpointService{},
-			ServicesService: service.ServicesService{},
-			PanelService:    service.PanelService{},
-			StatsService:    *a.statsService,
-			ServerService:   *a.serverService,
-			ChiselService:   a.chiselService,
-			GostService:     a.gostService,
+			SettingService:   a.SettingService,
+			ConfigService:    a.configService,
+			ClientService:    service.ClientService{},
+			TlsService:       service.TlsService{},
+			InboundService:   service.InboundService{},
+			OutboundService:  service.OutboundService{},
+			EndpointService:  service.EndpointService{},
+			ServicesService:  service.ServicesService{},
+			PanelService:     service.PanelService{},
+			StatsService:     *a.statsService,
+			ServerService:    *a.serverService,
+			ChiselService:    a.chiselService,
+			GostService:      a.gostService,
+			TapService:       a.tapService,
+			UdpTunnelService: a.udpTunnelService,
 		}
 		a.webServer.SetServicesBundle(bundle)
 	}
@@ -112,7 +116,7 @@ func (a *APP) Init() error {
 
 	if !hasClientConfig {
 		defaultChiselConfig := model.ChiselConfig{
-			Name:          "default", // Corrected typo
+			Name:          "default",
 			Mode:          "client",
 			ServerAddress: "127.0.0.1",
 			ServerPort:    8443,
@@ -166,7 +170,6 @@ func (a *APP) Start() error {
 	}
 
 	// --- Auto-start all Chisel clients ---
-	// First, reset all Chisel PIDs in the database to 0 to ensure auto-start attempts
 	allChiselConfigs, err := a.chiselService.GetAllChiselConfigs()
 	if err != nil {
 		logger.Error("Error getting all Chisel configs for PID reset:", err)
@@ -198,7 +201,9 @@ func (a *APP) Start() error {
 			}
 		}
 	}
-	// --- End auto-start Chisel clients ---
+	// --- Auto-start UDP Tunnels ---
+	a.udpTunnelService.AutoStartUdpTunnels()
+	// --- End auto-start UDP Tunnels ---
 
 	return nil
 }
@@ -218,7 +223,6 @@ func (a *APP) Stop() {
 		logger.Warning("stop Core err:", err)
 	}
 
-	// Stop all active Chisel services
 	a.chiselService.StopAllActiveChiselServices()
 }
 
@@ -261,7 +265,6 @@ func (a *APP) RestartApp() {
 	err := a.Init()
 	if err != nil {
 		logger.Error("Error re-initializing app:", err)
-		// If Init fails, we should probably exit, as the app is in an inconsistent state.
 		os.Exit(1)
 	}
 	err = a.Start()
@@ -337,4 +340,8 @@ func (a *APP) GetTapService() *service.TapService {
 
 func (a *APP) GetGostService() *service.GostService {
 	return a.gostService
+}
+
+func (a *APP) GetUdpTunnelService() *service.UdpTunnelService {
+	return a.udpTunnelService
 }

@@ -92,6 +92,7 @@ func InitDB(dbPath string) error {
 		&model.GreTunnel{},
 		&model.TapTunnel{},
 		&model.MTProtoProxyConfig{},
+		&model.UdpTunnelConfig{},
 	)
 	if err != nil {
 		return err

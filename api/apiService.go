@@ -32,6 +32,7 @@ type ApiService struct {
 	service.MTProtoService
 	service.GreService
 	service.TapService
+	service.UdpTunnelService
 }
 
 func (a *ApiService) LoadData(c *gin.Context) {
@@ -108,6 +109,10 @@ func (a *ApiService) getData(c *gin.Context) (interface{}, error) {
 		if err != nil {
 			return "", err
 		}
+		udpTunnelConfigs, err := a.UdpTunnelService.GetAllUdpTunnels()
+		if err != nil {
+			return "", err
+		}
 		subURI, err := a.SettingService.GetFinalSubURI(getHostname(c))
 		if err != nil {
 			return "", err
@@ -127,6 +132,7 @@ func (a *ApiService) getData(c *gin.Context) (interface{}, error) {
 		data["mtproto"] = mtprotoConfigs
 		data["gre"] = greConfigs
 		data["tap"] = tapConfigs
+		data["udptunnel"] = udpTunnelConfigs
 		data["subURI"] = subURI
 		data["enableTraffic"] = trafficAge > 0
 		data["onlines"] = onlines
@@ -191,6 +197,12 @@ func (a *ApiService) LoadPartialData(c *gin.Context, objs []string) error {
 				return err
 			}
 			data[obj] = tapConfigs
+		case "udptunnel":
+			udpTunnelConfigs, err := a.UdpTunnelService.GetAllUdpTunnels()
+			if err != nil {
+				return err
+			}
+			data[obj] = udpTunnelConfigs
 		case "tls":
 			tlsConfigs, err := a.TlsService.GetAll()
 			if err != nil {
@@ -300,6 +312,7 @@ func (a *ApiService) GetDb(c *gin.Context) {
 	c.Writer.Write(db)
 }
 
+// postActions is a helper function to extract action and data from a POST request.
 func (a *ApiService) postActions(c *gin.Context) (string, json.RawMessage, error) {
 	var data map[string]json.RawMessage
 	err := c.ShouldBind(&data)
@@ -309,6 +322,12 @@ func (a *ApiService) postActions(c *gin.Context) (string, json.RawMessage, error
 	return string(data["action"]), data["data"], nil
 }
 
+// APIHandler struct (assuming it's defined elsewhere, e.g., in apiHandler.go)
+// For the purpose of this modification, we'll assume a.ApiService is available.
+// This function is not part of ApiService, but rather a handler that uses ApiService.
+// We need to find the actual postHandler function in api/apiHandler.go
+
+// Login handles user login requests.
 func (a *ApiService) Login(c *gin.Context) {
 	remoteIP := getRemoteIp(c)
 	loginUser, err := a.UserService.Login(c.Request.FormValue("user"), c.Request.FormValue("pass"), remoteIP)
@@ -332,6 +351,7 @@ func (a *ApiService) Login(c *gin.Context) {
 	jsonMsg(c, "", nil)
 }
 
+// ChangePass handles password change requests.
 func (a *ApiService) ChangePass(c *gin.Context) {
 	id := c.Request.FormValue("id")
 	oldPass := c.Request.FormValue("oldPass")
@@ -346,6 +366,7 @@ func (a *ApiService) ChangePass(c *gin.Context) {
 	}
 }
 
+// Save handles saving various configurations.
 func (a *ApiService) Save(c *gin.Context, loginUser string) {
 	hostname := getHostname(c)
 	obj := c.Request.FormValue("object")
@@ -363,22 +384,26 @@ func (a *ApiService) Save(c *gin.Context, loginUser string) {
 	}
 }
 
+// RestartApp restarts the panel application.
 func (a *ApiService) RestartApp(c *gin.Context) {
 	err := a.PanelService.RestartPanel(3)
 	jsonMsg(c, "restartApp", err)
 }
 
+// RestartSb restarts the sing-box core.
 func (a *ApiService) RestartSb(c *gin.Context) {
 	err := a.ConfigService.RestartCore()
 	jsonMsg(c, "restartSb", err)
 }
 
+// LinkConvert converts a link.
 func (a *ApiService) LinkConvert(c *gin.Context) {
 	link := c.Request.FormValue("link")
 	result, _, err := util.GetOutbound(link, 0)
 	jsonObj(c, result, err)
 }
 
+// ImportDb imports a database file.
 func (a *ApiService) ImportDb(c *gin.Context) {
 	file, _, err := c.Request.FormFile("db")
 	if err != nil {
@@ -390,6 +415,7 @@ func (a *ApiService) ImportDb(c *gin.Context) {
 	jsonMsg(c, "", err)
 }
 
+// Logout handles user logout requests.
 func (a *ApiService) Logout(c *gin.Context) {
 	loginUser := GetLoginUser(c)
 	if loginUser != "" {
@@ -399,16 +425,19 @@ func (a *ApiService) Logout(c *gin.Context) {
 	jsonMsg(c, "", nil)
 }
 
+// LoadTokens loads user tokens.
 func (a *ApiService) LoadTokens() ([]byte, error) {
 	return a.UserService.LoadTokens()
 }
 
+// GetTokens retrieves user tokens.
 func (a *ApiService) GetTokens(c *gin.Context) {
 	loginUser := GetLoginUser(c)
 	tokens, err := a.UserService.GetUserTokens(loginUser)
 	jsonObj(c, tokens, err)
 }
 
+// AddToken adds a new user token.
 func (a *ApiService) AddToken(c *gin.Context) {
 	loginUser := GetLoginUser(c)
 	expiry := c.Request.FormValue("expiry")
@@ -422,6 +451,7 @@ func (a *ApiService) AddToken(c *gin.Context) {
 	jsonObj(c, token, err)
 }
 
+// DeleteToken deletes a user token.
 func (a *ApiService) DeleteToken(c *gin.Context) {
 	tokenId := c.Request.FormValue("id")
 	err := a.UserService.DeleteToken(tokenId)

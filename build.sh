@@ -1,7 +1,7 @@
 #!/bin/sh
 
 cd frontend
-npm i
+sudo npm i
 npm run build
 
 cd ..
@@ -13,7 +13,7 @@ cp -R frontend/dist/* web/html/
 
 # Touch the problematic file to force recompilation
 # print_message "\e[33m" "Touching telegram/bot.go to force recompilation..."
-touch telegram/bot.go
+# touch telegram/bot.go
 
 # Build backend
 # print_message "\e[36m" "Building backend..."

@@ -1,1642 +1,224 @@
 package telegram
 
 import (
-	"bytes"
 	"context"
-	"encoding/json"
 	"fmt"
 	"log"
 	"strconv"
 	"strings"
-	"time"
 
+	"github.com/alireza0/s-ui/core"
 	"github.com/alireza0/s-ui/database/model"
 	"github.com/alireza0/s-ui/service"
-	"github.com/alireza0/s-ui/util"
-	"github.com/go-telegram/bot"
-	"github.com/go-telegram/bot/models"
-	"github.com/gofrs/uuid/v5"
+	"gopkg.in/telebot.v3"
 )
 
-// AppServices defines the interface the bot needs to interact with the main app
+// AppServices is an interface that defines the methods the bot can use to interact with the main application.
 type AppServices interface {
-	RestartApp()
+	GetCore() *core.Core
 	GetConfigService() *service.ConfigService
 	GetChiselService() *service.ChiselService
-	GetMTProtoService() *service.MTProtoEmbeddedService // Updated to embedded version
-	GetGreService() *service.GreService                // Added
-	GetTapService() *service.TapService                // Added
+	GetGostService() *service.GostService
+	GetUdpTunnelService() *service.UdpTunnelService
+	GetMTProtoService() *service.MTProtoEmbeddedService
+	GetGreService() *service.GreService
+	GetTapService() *service.TapService
 	GetFirstInboundId() (uint, error)
 	GetUserByEmail(email string) (*model.Client, error)
-	GetAllUsers() (*[]model.Client, error)
 	FromIds(ids []uint) ([]*model.Inbound, error)
 	GetOnlines() (*service.Onlines, error)
 	GetLogs(limit string, level string) []string
-	GetWebDomain() (string, error)
 	GetInboundByTag(tag string) (*model.Inbound, error)
 	BackupDB(exclude string) ([]byte, error)
+	GetAllUsers() (*[]model.Client, error)
 	GetAllInbounds() ([]model.Inbound, error)
 	GetAllOutbounds() ([]model.Outbound, error)
-	GetGostService() *service.GostService
+	RestartApp()
 }
 
-var (
-	adminIDs   = make(map[int64]bool)
-	services   AppServices
-	currentBot *bot.Bot
-)
-
-// Start initializes and starts the Telegram bot
-func Start(ctx context.Context, config *Config, appServices AppServices) {
-	if !config.Enabled || config.BotToken == "" {
-		log.Println("Telegram bot is disabled or token is not configured.")
+// Start initializes and starts the Telegram bot.
+func Start(ctx context.Context, cfg *Config, app AppServices) {
+	if cfg == nil || !cfg.Enabled {
 		return
 	}
 
-	services = appServices
-
-	for _, id := range config.AdminUserIDs {
-		adminIDs[id] = true
+	pref := telebot.Settings{
+		Token:  cfg.BotToken,
+		Poller: &telebot.LongPoller{Timeout: 10},
 	}
 
-	opts := []bot.Option{
-		bot.WithDefaultHandler(handler),
-	}
-
-	b, err := bot.New(config.BotToken, opts...)
+	bot, err := telebot.NewBot(pref)
 	if err != nil {
-		log.Printf("Error creating Telegram bot: %v", err)
-		return
-	}
-	currentBot = b
-
-	log.Println("Telegram bot started.")
-	b.Start(ctx)
-}
-
-func Stop() {
-	if currentBot != nil {
-		currentBot.Close(context.Background())
-		currentBot = nil
-	}
-}
-
-func handler(ctx context.Context, b *bot.Bot, update *models.Update) {
-	if update.Message == nil {
-		return
+		log.Fatalf("Failed to create Telegram bot: %v", err)
 	}
 
-	userID := update.Message.From.ID
-	if !isAdmin(userID) {
-		b.SendMessage(ctx, &bot.SendMessageParams{
-			ChatID: update.Message.Chat.ID,
-			Text:   "You are not authorized to use this bot.",
-		})
-		return
-	}
-
-	if strings.HasPrefix(update.Message.Text, "/") {
-		handleCommand(ctx, b, update.Message)
-	}
-}
-
-func isAdmin(userID int64) bool {
-	_, ok := adminIDs[userID]
-	return ok
-}
-
-func handleCommand(ctx context.Context, b *bot.Bot, message *models.Message) {
-	command, args := parseCommand(message.Text)
-
-	switch command {
-	case "/start":
-		b.SendMessage(ctx, &bot.SendMessageParams{
-			ChatID: message.Chat.ID,
-			Text:   "Welcome to S-UI Admin Bot. Send /help to see available commands.",
-		})
-	case "/help":
-		b.SendMessage(ctx, &bot.SendMessageParams{
-			ChatID: message.Chat.ID,
-			Text: "Available commands:\n" +
-				"/adduser <email> <traffic_gb> [inbound_tag]\n" +
-				"/deluser <email>\n" +
-				"/stats\n" +
-				"/logs\n" +
-				"/restart\n" +
-				"/sublink <email>\n" +
-				"/list_users\n" +
-				"/backup\n" +
-				"/add_in <type> <tag> <port>\n" +
-				"/add_out <json>\n" +
-				"/list_inbounds\n" +
-				"/list_outbounds\n\n" +
-				"Chisel Commands:\n" +
-				"/add_chisel_server <name> <port> [extra_args]\n" +
-				"/add_chisel_client <name> <server:port> [R:local:remote ...] [extra_args]\n" +
-				"/list_chisel\n" +
-				"/remove_chisel <name>\n" +
-				"/start_chisel <name>\n" +
-				"/stop_chisel <name>\n\n" +
-				"Subscription Domain Commands:\n" +
-				"/set_sub_domain <domain>\n" +
-				"/get_sub_domain\n\n" +
-				"MTProto Proxy Commands:\n" +
-				"/add_mtproto <name> <port> <secret> [ad_tag]\n" +
-				"/list_mtproto\n" +
-				"/remove_mtproto <name>\n" +
-				"/start_mtproto <name>\n" +
-				"/stop_mtproto <name>\n" +
-				"/gen_mtproto_secret\n\n" +
-				"GRE Tunnel Commands:\n" +
-				"/add_gre <name> <local_ip> <remote_ip> [interface_name]\n" +
-				"/list_gre\n" +
-				"/remove_gre <name>\n" +
-				"/start_gre <name>\n" +
-				"/stop_gre <name>\n\n" +
-				"TAP Tunnel Commands:\n" +
-				"/add_tap <name> <ip_address> [mtu] [interface_name]\n" +
-				"/list_tap\n" +
-				"/remove_tap <name>\n" +
-				"/start_tap <name>\n" +
-				"/stop_tap <name>",
-		})
-	case "/adduser":
-		handleAddUser(ctx, b, message, args)
-	case "/deluser":
-		handleDelUser(ctx, b, message, args)
-	case "/stats":
-		handleStats(ctx, b, message)
-	case "/logs":
-		handleLogs(ctx, b, message, args)
-	case "/restart":
-		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: "Restarting s-ui service..."})
-		services.RestartApp()
-	case "/sublink":
-		handleSublink(ctx, b, message, args)
-	case "/add_in":
-		handleAddInbound(ctx, b, message, args)
-	case "/add_out":
-		handleAddOutbound(ctx, b, message, args)
-	case "/list_users":
-		handleListUsers(ctx, b, message)
-	case "/setup_service":
-		handleSetupService(ctx, b, message)
-	case "/backup":
-		handleBackup(ctx, b, message)
-	case "/add_chisel_server":
-		handleAddChiselServer(ctx, b, message, args)
-	case "/add_chisel_client":
-		handleAddChiselClient(ctx, b, message, args)
-	case "/list_chisel":
-		handleListChisel(ctx, b, message)
-	case "/remove_chisel":
-		handleRemoveChisel(ctx, b, message, args)
-	case "/start_chisel":
-		handleStartChisel(ctx, b, message, args)
-	case "/stop_chisel":
-		handleStopChisel(ctx, b, message, args)
-	// GOST Tunnel Commands
-	case "/add_gost_server":
-		handleAddGostServer(ctx, b, message, args)
-	case "/add_gost_client":
-		handleAddGostClient(ctx, b, message, args)
-	case "/list_gost":
-		handleListGost(ctx, b, message)
-	case "/remove_gost":
-		handleRemoveGost(ctx, b, message, args)
-	case "/start_gost":
-		handleStartGost(ctx, b, message, args)
-	case "/stop_gost":
-		handleStopGost(ctx, b, message, args)
-	case "/list_inbounds":
-		handleListInbounds(ctx, b, message)
-	case "/list_outbounds":
-		handleListOutbounds(ctx, b, message)
-	// Subscription Domain Commands
-	case "/set_sub_domain":
-		handleSetSubDomain(ctx, b, message, args)
-	case "/get_sub_domain":
-		handleGetSubDomain(ctx, b, message)
-	// MTProto Proxy Commands
-	case "/add_mtproto":
-		handleAddMTProto(ctx, b, message, args)
-	case "/list_mtproto":
-		handleListMTProto(ctx, b, message)
-	case "/remove_mtproto":
-		handleRemoveMTProto(ctx, b, message, args)
-	case "/start_mtproto":
-		handleStartMTProto(ctx, b, message, args)
-	case "/stop_mtproto":
-		handleStopMTProto(ctx, b, message, args)
-	case "/gen_mtproto_secret":
-		handleGenerateMTProtoSecret(ctx, b, message)
-	// GRE Tunnel Commands
-	case "/add_gre":
-		handleAddGre(ctx, b, message, args)
-	case "/list_gre":
-		handleListGre(ctx, b, message)
-	case "/remove_gre":
-		handleRemoveGre(ctx, b, message, args)
-	case "/start_gre":
-		handleStartGre(ctx, b, message, args)
-	case "/stop_gre":
-		handleStopGre(ctx, b, message, args)
-	// TAP Tunnel Commands
-	case "/add_tap":
-		handleAddTap(ctx, b, message, args)
-	case "/list_tap":
-		handleListTap(ctx, b, message)
-	case "/remove_tap":
-		handleRemoveTap(ctx, b, message, args)
-	case "/start_tap":
-		handleStartTap(ctx, b, message, args)
-	case "/stop_tap":
-		handleStopTap(ctx, b, message, args)
-	default:
-		b.SendMessage(ctx, &bot.SendMessageParams{
-			ChatID: message.Chat.ID,
-			Text:   "Unknown command. Send /help to see available commands.",
-		})
-	}
-}
-
-func handleAddUser(ctx context.Context, b *bot.Bot, message *models.Message, args []string) {
-	if len(args) < 2 || len(args) > 3 {
-		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: "Usage: /adduser <email> <traffic_gb> [inbound_tag]"})
-		return
-	}
-
-	email := args[0]
-	trafficGB, err := strconv.ParseInt(args[1], 10, 64)
-	if err != nil {
-		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: "Invalid traffic value. It must be a number."})
-		return
-	}
-
-	var inboundID uint
-	if len(args) == 3 {
-		inboundTag := args[2]
-		inbound, err := services.GetInboundByTag(inboundTag)
-		if err != nil {
-			log.Printf("Error getting inbound by tag %s: %v", inboundTag, err)
-			b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: fmt.Sprintf("Inbound with tag '%s' not found.", inboundTag)})
-			return
-		}
-		inboundID = inbound.Id
-	} else {
-		inboundID, err = services.GetFirstInboundId()
-		if err != nil {
-			log.Printf("Error getting first inbound ID: %v", err)
-			b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: "Error getting inbound ID."})
-			return
-		}
-	}
-
-	newUUID, err := uuid.NewV4()
-	if err != nil {
-		log.Printf("Error creating UUID: %v", err)
-		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: "Error creating user UUID."})
-		return
-	}
-
-	clientConfig := fmt.Sprintf(`{"id": "%s"}`, newUUID.String())
-	inboundsJSON := fmt.Sprintf(`[%d]`, inboundID)
-
-	newClient := model.Client{
-		Enable:   true,
-		Name:     email,
-		Volume:   trafficGB * 1024 * 1024 * 1024,
-		Config:   json.RawMessage(clientConfig),
-		Inbounds: json.RawMessage(inboundsJSON),
-		Links:    json.RawMessage("[]"),
-	}
-
-	clientJSON, err := json.Marshal(newClient)
-	if err != nil {
-		log.Printf("Error marshalling client: %v", err)
-		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: "Error preparing user data."})
-		return
-	}
-
-	_, err = services.GetConfigService().Save("clients", "new", clientJSON, "", "telegram-bot", "")
-	if err != nil {
-		log.Printf("Error saving client: %v", err)
-		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: fmt.Sprintf("Error adding user: %v", err)})
-		return
-	}
-
-	b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: fmt.Sprintf("User %s added successfully.", email)})
-}
-
-func handleDelUser(ctx context.Context, b *bot.Bot, message *models.Message, args []string) {
-	if len(args) != 1 {
-		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: "Usage: /deluser <email>"})
-		return
-	}
-
-	email := args[0]
-	client, err := services.GetUserByEmail(email)
-	if err != nil {
-		log.Printf("Error finding user %s: %v", email, err)
-		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: fmt.Sprintf("User %s not found.", email)})
-		return
-	}
-
-	idJson, err := json.Marshal(client.Id)
-	if err != nil {
-		log.Printf("Error marshalling user ID: %v", err)
-		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: "Error preparing user ID for deletion."})
-		return
-	}
-
-	_, err = services.GetConfigService().Save("clients", "del", idJson, "", "telegram-bot", "")
-	if err != nil {
-		log.Printf("Error deleting client: %v", err)
-		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: fmt.Sprintf("Error deleting user: %v", err)})
-		return
-	}
-
-	b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: fmt.Sprintf("User %s deleted successfully.", email)})
-}
-
-func handleSublink(ctx context.Context, b *bot.Bot, message *models.Message, args []string) {
-	if len(args) != 1 {
-		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: "Usage: /sublink <email>"})
-		return
-	}
-
-	email := args[0]
-	log.Printf("handleSublink: received request for email: %s", email)
-
-	client, err := services.GetUserByEmail(email)
-	if err != nil {
-		log.Printf("Error finding user %s: %v", email, err)
-		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: fmt.Sprintf("Error: User %s not found or database error: %v", email, err)})
-		return
-	}
-	log.Printf("handleSublink: found client: %+v", client)
-
-	var inboundIDs []uint
-	if err := json.Unmarshal(client.Inbounds, &inboundIDs); err != nil {
-		log.Printf("Error unmarshalling inbounds for user %s: %v", email, err)
-		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: fmt.Sprintf("Error: Could not read user inbounds configuration: %v", err)})
-		return
-	}
-	if len(inboundIDs) == 0 {
-		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: fmt.Sprintf("No inbounds configured for user %s. Please add inbounds to the user.", email)})
-		return
-	}
-	log.Printf("handleSublink: found inbound IDs: %v", inboundIDs)
-
-	inbounds, err := services.FromIds(inboundIDs)
-	if err != nil {
-		log.Printf("Error getting inbounds for user %s: %v", email, err)
-		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: fmt.Sprintf("Error: Could not retrieve inbound details for user %s: %v", email, err)})
-		return
-	}
-	if len(inbounds) == 0 {
-		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: fmt.Sprintf("No active inbounds found for user %s based on configured IDs.", email)})
-		return
-	}
-	log.Printf("handleSublink: found inbounds: %+v", inbounds)
-
-	webDomain, err := services.GetWebDomain()
-	if err != nil {
-		log.Printf("Error getting web domain: %v", err)
-		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: fmt.Sprintf("Error: Could not retrieve web domain for link generation: %v", err)})
-		return
-	}
-	if webDomain == "" {
-		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: "Error: Web domain is not configured. Cannot generate subscription links."})
-		return
-	}
-	log.Printf("handleSublink: found web domain: %s", webDomain)
-
-	var allLinks []string
-	for _, inbound := range inbounds {
-		links := util.LinkGenerator(client.Config, inbound, webDomain)
-		if len(links) > 0 {
-			allLinks = append(allLinks, links...)
-		} else {
-			log.Printf("handleSublink: LinkGenerator returned no links for inbound ID %d, tag %s", inbound.Id, inbound.Tag)
-		}
-	}
-	log.Printf("handleSublink: generated links: %v", allLinks)
-
-	if len(allLinks) == 0 {
-		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: fmt.Sprintf("No subscription links could be generated for user %s. Check user configuration, inbounds, and web domain settings.", email)})
-		return
-	}
-
-	b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: "Subscription links for " + email + ":\n" + strings.Join(allLinks, "\n")})
-}
-
-func handleStats(ctx context.Context, b *bot.Bot, message *models.Message) {
-	onlines, err := services.GetOnlines()
-	if err != nil {
-		log.Printf("Error getting online users: %v", err)
-		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: "Error getting online users."})
-		return
-	}
-
-	var response strings.Builder
-	response.WriteString("Online Users:\n")
-	if len(onlines.User) > 0 {
-		for _, user := range onlines.User {
-			response.WriteString(fmt.Sprintf("- %s\n", user))
-		}
-	} else {
-		response.WriteString("No users online.\n")
-	}
-
-	b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: response.String()})
-}
-
-func handleLogs(ctx context.Context, b *bot.Bot, message *models.Message, args []string) {
-	limit := "10" // Default limit
-	level := "debug" // Default level
-
-	if len(args) > 0 {
-		limit = args[0]
-	}
-	if len(args) > 1 {
-		level = args[1]
-	}
-
-	logs := services.GetLogs(limit, level)
-	if len(logs) == 0 {
-		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: "No logs found."})
-		return
-	}
-
-	response := strings.Join(logs, "\n")
-	b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: "Logs:\n" + response})
-}
-
-// handleAddOutbound still expects a full JSON configuration.
-func handleAddOutbound(ctx context.Context, b *bot.Bot, message *models.Message, args []string) {
-	if len(args) < 1 {
-		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: "Usage: /add_out <json_config>"})
-		return
-	}
-
-	jsonData := []byte(strings.Join(args, " "))
-	if !json.Valid(jsonData) {
-		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: "Invalid JSON provided."})
-		return
-	}
-
-	_, err := services.GetConfigService().Save("outbounds", "new", jsonData, "", "telegram-bot", "")
-	if err != nil {
-		log.Printf("Error adding outbound: %v", err)
-		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: fmt.Sprintf("Error adding outbound: %v", err)})
-		return
-	}
-
-	b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: "Outbound added successfully."})
-}
-
-func handleAddInbound(ctx context.Context, b *bot.Bot, message *models.Message, args []string) {
-	if len(args) != 3 {
-		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: "Usage: /add_in <type> <tag> <port>"})
-		return
-	}
-
-	inboundType := args[0]
-	tag := args[1]
-	port, err := strconv.Atoi(args[2])
-	if err != nil {
-		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: "Invalid port number."})
-		return
-	}
-
-	inboundConfig := map[string]interface{}{
-		"type":        inboundType,
-		"tag":         tag,
-		"listen":      "0.0.0.0",
-		"listen_port": port,
-	}
-
-	jsonData, err := json.Marshal(inboundConfig)
-	if err != nil {
-		log.Printf("Error marshalling inbound config: %v", err)
-		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: "Error creating inbound configuration."})
-		return
-	}
-
-	_, err = services.GetConfigService().Save("inbounds", "new", jsonData, "", "telegram-bot", "")
-	if err != nil {
-		log.Printf("Error adding inbound: %v", err)
-		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: fmt.Sprintf("Error adding inbound: %v", err)})
-		return
-	}
-
-	b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: fmt.Sprintf("Inbound of type '%s' with tag '%s' on port %d added successfully.", inboundType, tag, port)})
-}
-
-func handleBackup(ctx context.Context, b *bot.Bot, message *models.Message) {
-	b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: "Creating backup..."})
-
-	dbBytes, err := services.BackupDB("")
-	if err != nil {
-		log.Printf("Error creating backup: %v", err)
-		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: "Error creating backup."})
-		return
-	}
-
-	fileName := fmt.Sprintf("s-ui-backup-%s.db", time.Now().Format("2006-01-02-15-04-05"))
-	b.SendDocument(ctx, &bot.SendDocumentParams{
-		ChatID:   message.Chat.ID,
-		Document: &models.InputFileUpload{Filename: fileName, Data: bytes.NewReader(dbBytes)},
-		Caption:  "Here is your database backup.",
-	})
-}
-
-func handleSetupService(ctx context.Context, b *bot.Bot, message *models.Message) {
-	serviceContent := "[Unit]\n" +
-		"Description=s-ui Service\n" +
-		"After=network.target\n" +
-		"Wants=network.target\n\n" +
-		"[Service]\n" +
-		"Type=simple\n" +
-		"WorkingDirectory=/source/s-ui/\n" +
-		"ExecStart=/source/s-ui/sui\n" +
-		"Restart=always\n" +
-		"RestartSec=10s\n" +
-		"LimitNOFILE=1048576\n\n" +
-		"[Install]\n" +
-		"WantedBy=multi-user.target"
-
-	response := fmt.Sprintf("Для настройки сервиса systemd выполните следующие шаги:\n\n"+
-		"**1. Создайте файл сервиса:**\n"+
-		"Создайте файл `/etc/systemd/system/s-ui.service` со следующим содержимым (потребуются права sudo):\n"+
-		"```ini\n%s\n```\n\n"+
-		"**2. Выполните команды в терминале:**\n"+
-		"```bash\n"+
-		"sudo systemctl daemon-reload\n"+
-		"sudo systemctl enable s-ui.service\n"+
-		"sudo systemctl start s-ui.service\n"+
-		"sudo systemctl status s-ui.service\n"+
-		"```\n\n"+
-		"После этого приложение будет запускаться как сервис в системе", serviceContent)
-
-	b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: response})
-}
-
-func handleListUsers(ctx context.Context, b *bot.Bot, message *models.Message) {
-	clients, err := services.GetAllUsers()
-	if err != nil {
-		log.Printf("Error getting all users: %v", err)
-		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: "Error getting users."})
-		return
-	}
-
-	if len(*clients) == 0 {
-		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: "No users found."})
-		return
-	}
-
-	var response strings.Builder
-	response.WriteString("Users:\n")
-	for _, client := range *clients {
-		response.WriteString(fmt.Sprintf("- Name: %s, Enabled: %t\n", client.Name, client.Enable))
-	}
-
-	b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: response.String()})
-}
-
-func parseCommand(text string) (string, []string) {
-	parts := strings.Fields(text)
-	if len(parts) == 0 {
-		return "", nil
-	}
-	return parts[0], parts[1:]
-}
-
-func handleAddChiselServer(ctx context.Context, b *bot.Bot, message *models.Message, args []string) {
-	if len(args) < 2 {
-		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: "Usage: /add_chisel_server <name> <port> [extra_args]"})
-		return
-	}
-
-	name := args[0]
-	port, err := strconv.Atoi(args[1])
-	if err != nil {
-		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: "Invalid port number."})
-		return
-	}
-
-	extraArgs := ""
-	if len(args) > 2 {
-		extraArgs = strings.Join(args[2:], " ")
-	}
-
-	config := model.ChiselConfig{
-		Name:          name,
-		Mode:          "server",
-		ListenAddress: "0.0.0.0",
-		ListenPort:    port,
-		Args:          extraArgs,
-	}
-
-	chiselService := services.GetChiselService()
-	if err := chiselService.CreateChiselConfig(&config); err != nil {
-		log.Printf("Error creating chisel config: %v", err)
-		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: fmt.Sprintf("Error creating config: %v", err)})
-		return
-	}
-
-	b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: fmt.Sprintf("Chisel server config '%s' created. Starting...", name)})
-
-	if err := chiselService.StartChisel(&config); err != nil {
-		log.Printf("Error starting chisel server: %v", err)
-		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: fmt.Sprintf("Error starting server: %v", err)})
-		return
-	}
-
-	b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: fmt.Sprintf("Chisel server '%s' started successfully on port %d.", name, port)})
-}
-
-func handleAddChiselClient(ctx context.Context, b *bot.Bot, message *models.Message, args []string) {
-	// Usage: /add_chisel_client <name> <server:port> [remotes_and_extra_args...]
-	if len(args) < 2 {
-		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: "Usage: /add_chisel_client <name> <server:port> [remotes_and_extra_args]"})
-		return
-	}
-
-	name := args[0]
-	serverAddr := args[1]
-
-	serverParts := strings.Split(serverAddr, ":")
-	if len(serverParts) != 2 {
-		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: "Invalid server address format. Use <server:port>."})
-		return
-	}
-	serverHost := serverParts[0]
-	serverPort, err := strconv.Atoi(serverParts[1])
-	if err != nil {
-		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: "Invalid server port."})
-		return
-	}
-
-	var finalArgs []string
-
-	// Always include default auth and TLS skip verify for HTTPS connection
-	finalArgs = append(finalArgs, "--auth", "chisel:2025")
-	finalArgs = append(finalArgs, "--tls-skip-verify")
-
-	// Default remotes
-	defaultRemotes := []string{
-		"R:2095:localhost:2095",
-		"R:2096:localhost:2096",
-		"R:1025:localhost:1025",
-		"R:1026:localhost:1026",
-		"R:1027:localhost:1027",
-		"R:1028:localhost:1028",
-	}
-
-	// Check if user provided any remotes or extra args
-	if len(args) > 2 {
-		userProvidedArgs := args[2:]
-		hasExplicitRemotes := false
-		for _, arg := range userProvidedArgs {
-			if strings.HasPrefix(arg, "R:") {
-				hasExplicitRemotes = true
-				break
+	// Middleware to check for admin user
+	adminOnly := bot.Group()
+	adminOnly.Use(func(next telebot.HandlerFunc) telebot.HandlerFunc {
+		return func(c telebot.Context) error {
+			isAdmin := false
+			for _, adminID := range cfg.AdminUserIDs {
+				if c.Sender().ID == int64(adminID) {
+					isAdmin = true
+					break
+				}
 			}
-		}
-
-		if hasExplicitRemotes {
-			// User provided explicit remotes, so append all their args directly
-			finalArgs = append(finalArgs, userProvidedArgs...)
-		} else {
-			// No explicit remotes from user, so use defaults and append their other extra args
-			finalArgs = append(finalArgs, defaultRemotes...)
-			finalArgs = append(finalArgs, userProvidedArgs...)
-		}
-	} else {
-		// No arguments after <server:port>, so use default remotes
-		finalArgs = append(finalArgs, defaultRemotes...)
-	}
-
-	config := model.ChiselConfig{
-		Name:          name,
-		Mode:          "client",
-		ServerAddress: serverHost,
-		ServerPort:    serverPort,
-		Args:          strings.Join(finalArgs, " "),
-	}
-
-	chiselService := services.GetChiselService()
-	if err := chiselService.CreateChiselConfig(&config); err != nil {
-		log.Printf("Error creating chisel config: %v", err)
-		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: fmt.Sprintf("Error creating config: %v", err)})
-		return
-	}
-
-	b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: fmt.Sprintf("Chisel client config '%s' created. Starting...", name)})
-
-	if err := chiselService.StartChisel(&config); err != nil {
-		log.Printf("Error starting chisel client: %v", err)
-		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: fmt.Sprintf("Error starting client: %v", err)})
-		return
-	}
-
-	b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: fmt.Sprintf("Chisel client '%s' started successfully.", name)})
-}
-
-func handleListChisel(ctx context.Context, b *bot.Bot, message *models.Message) {
-	chiselService := services.GetChiselService()
-	configs, err := chiselService.GetAllChiselConfigs()
-	if err != nil {
-		log.Printf("Error getting chisel configs: %v", err)
-		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: "Error getting chisel configs."})
-		return
-	}
-
-	if len(configs) == 0 {
-		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: "No Chisel services configured."})
-		return
-	}
-
-	var response strings.Builder
-	response.WriteString("Configured Chisel Services:\n")
-	for _, config := range configs {
-		status := "Stopped"
-		if config.PID > 0 {
-			status = "Running"
-		}
-		response.WriteString(fmt.Sprintf("\n- Name: %s\n", config.Name))
-		response.WriteString(fmt.Sprintf("  Mode: %s\n", config.Mode))
-		if config.Mode == "server" {
-			response.WriteString(fmt.Sprintf("  Listen: 0.0.0.0:%d\n", config.ListenPort))
-		} else {
-			response.WriteString(fmt.Sprintf("  Server: %s:%d\n", config.ServerAddress, config.ServerPort))
-			response.WriteString(fmt.Sprintf("  Args: %s\n", config.Args))
-		}
-		response.WriteString(fmt.Sprintf("  Status: %s\n", status))
-		if config.Mode == "server" && config.Args != "" {
-			response.WriteString(fmt.Sprintf("  Extra Args: %s\n", config.Args))
-		}
-	}
-
-	b.SendMessage(ctx, &bot.SendMessageParams{
-		ChatID: message.Chat.ID,
-		Text:   response.String(),
-	})
-}
-
-func handleRemoveChisel(ctx context.Context, b *bot.Bot, message *models.Message, args []string) {
-	if len(args) != 1 {
-		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: "Usage: /remove_chisel <name>"})
-		return
-	}
-	name := args[0]
-	chiselService := services.GetChiselService()
-	config, err := chiselService.GetChiselConfigByName(name)
-	if err != nil {
-		log.Printf("Error getting chisel config by name %s: %v", name, err)
-		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: fmt.Sprintf("Config with name '%s' not found.", name)})
-		return
-	}
-
-	// Attempt to stop the service first.
-	if err := chiselService.StopChisel(config); err != nil {
-		// This would likely be a DB error. Log it, but proceed with deletion attempt.
-		log.Printf("Error stopping chisel service %s during removal (will attempt deletion anyway): %v", name, err)
-	}
-
-	// Now, delete the config from the database.
-	if err := chiselService.DeleteChiselConfig(config.ID); err != nil {
-		log.Printf("Error deleting chisel config %s: %v", name, err)
-		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: fmt.Sprintf("Failed to delete config '%s': %v", name, err)})
-		return
-	}
-
-	b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: fmt.Sprintf("Chisel config '%s' removed successfully.", name)})
-}
-
-// GOST Handlers
-func handleAddGostServer(ctx context.Context, b *bot.Bot, message *models.Message, args []string) {
-	if len(args) < 2 {
-		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: "Usage: /add_gost_server <name> <listen_port> <args...> (args should include forwarding rules for gost)"})
-		return
-	}
-
-	name := args[0]
-	port, err := strconv.Atoi(args[1])
-	if err != nil {
-		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: "Invalid port number."})
-		return
-	}
-
-	extraArgs := ""
-	if len(args) > 2 {
-		extraArgs = strings.Join(args[2:], " ")
-	}
-
-	config := model.GostConfig{
-		Name:          name,
-		Mode:          "server",
-		ListenAddress: "0.0.0.0",
-		ListenPort:    port,
-		Args:          extraArgs,
-		Status:        "down",
-	}
-
-	gostService := services.GetGostService()
-	if err := gostService.CreateGostConfig(&config); err != nil {
-		log.Printf("Error creating gost config: %v", err)
-		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: fmt.Sprintf("Error creating config: %v", err)})
-		return
-	}
-
-	b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: fmt.Sprintf("Gost server config '%s' created. Starting...", name)})
-
-	if err := gostService.StartGost(&config); err != nil {
-		log.Printf("Error starting gost server: %v", err)
-		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: fmt.Sprintf("Error starting gost server: %v", err)})
-		return
-	}
-
-	b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: fmt.Sprintf("Gost server '%s' started successfully on port %d.", name, port)})
-}
-
-func handleAddGostClient(ctx context.Context, b *bot.Bot, message *models.Message, args []string) {
-	if len(args) < 3 {
-		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: "Usage: /add_gost_client <name> <server:port> <args...> (args should describe forwarding for gost client)"})
-		return
-	}
-
-	name := args[0]
-	serverAddr := args[1]
-	extraArgs := ""
-	if len(args) > 2 {
-		extraArgs = strings.Join(args[2:], " ")
-	}
-
-	serverParts := strings.Split(serverAddr, ":")
-	if len(serverParts) != 2 {
-		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: "Invalid server address format. Use <server:port>."})
-		return
-	}
-	serverHost := serverParts[0]
-	serverPort, err := strconv.Atoi(serverParts[1])
-	if err != nil {
-		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: "Invalid server port."})
-		return
-	}
-
-	config := model.GostConfig{
-		Name:          name,
-		Mode:          "client",
-		ServerAddress: serverHost,
-		ServerPort:    serverPort,
-		Args:          extraArgs,
-		Status:        "down",
-	}
-
-	gostService := services.GetGostService()
-	if err := gostService.CreateGostConfig(&config); err != nil {
-		log.Printf("Error creating gost config: %v", err)
-		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: fmt.Sprintf("Error creating config: %v", err)})
-		return
-	}
-
-	b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: fmt.Sprintf("Gost client config '%s' created. Starting...", name)})
-
-	if err := gostService.StartGost(&config); err != nil {
-		log.Printf("Error starting gost client: %v", err)
-		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: fmt.Sprintf("Error starting gost client: %v", err)})
-		return
-	}
-
-	b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: fmt.Sprintf("Gost client '%s' started successfully.", name)})
-}
-
-func handleListGost(ctx context.Context, b *bot.Bot, message *models.Message) {
-	gostService := services.GetGostService()
-	configs, err := gostService.GetAllGostConfigs()
-	if err != nil {
-		log.Printf("Error getting gost configs: %v", err)
-		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: "Error getting gost configs."})
-		return
-	}
-
-	if len(configs) == 0 {
-		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: "No GOST services configured."})
-		return
-	}
-
-	var response strings.Builder
-	response.WriteString("Configured GOST Services:\n")
-	for _, config := range configs {
-		response.WriteString(fmt.Sprintf("\n- Name: %s\n", config.Name))
-		response.WriteString(fmt.Sprintf("  Mode: %s\n", config.Mode))
-		if config.Mode == "server" {
-			response.WriteString(fmt.Sprintf("  Listen: %s:%d\n", config.ListenAddress, config.ListenPort))
-		} else {
-			response.WriteString(fmt.Sprintf("  Server: %s:%d\n", config.ServerAddress, config.ServerPort))
-			if config.Args != "" {
-				response.WriteString(fmt.Sprintf("  Args: %s\n", config.Args))
+			if !isAdmin {
+				return c.Send("Access denied.")
 			}
+			return next(c)
 		}
-		response.WriteString(fmt.Sprintf("  Status: %s\n", config.Status))
-	}
+	})
 
-	b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: response.String()})
+	// Register handlers
+	registerHandlers(adminOnly, app)
+
+	log.Println("Telegram bot started...")
+	bot.Start()
 }
 
-func handleRemoveGost(ctx context.Context, b *bot.Bot, message *models.Message, args []string) {
-	if len(args) != 1 {
-		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: "Usage: /remove_gost <name>"})
-		return
-	}
-	name := args[0]
-	gostService := services.GetGostService()
-	config, err := gostService.GetGostConfigByName(name)
-	if err != nil {
-		log.Printf("Error getting gost config by name %s: %v", name, err)
-		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: fmt.Sprintf("Config with name '%s' not found.", name)})
-		return
-	}
+func registerHandlers(b *telebot.Group, app AppServices) {
+	// UDP Tunnel Handlers
+	b.Handle("/add_udptunnel", func(c telebot.Context) error {
+		return handleAddUdpTunnel(c, app.GetUdpTunnelService())
+	})
+	b.Handle("/list_udptunnels", func(c telebot.Context) error {
+		return handleListUdpTunnels(c, app.GetUdpTunnelService())
+	})
+	b.Handle("/remove_udptunnel", func(c telebot.Context) error {
+		return handleRemoveUdpTunnel(c, app.GetUdpTunnelService())
+	})
+	b.Handle("/start_udptunnel", func(c telebot.Context) error {
+		return handleStartUdpTunnel(c, app.GetUdpTunnelService())
+	})
+	b.Handle("/stop_udptunnel", func(c telebot.Context) error {
+		return handleStopUdpTunnel(c, app.GetUdpTunnelService())
+	})
 
-	if config.Status == "up" {
-		if err := gostService.StopGost(config.ID); err != nil {
-			log.Printf("Error stopping gost %s before removing: %v", name, err)
-			b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: fmt.Sprintf("Service '%s' was running, attempted to stop it before removal. It will be removed anyway.", name)})
-		} else {
-			b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: fmt.Sprintf("Service '%s' stopped.", name)})
-		}
-	}
-
-	if err := gostService.DeleteGostConfig(config.ID); err != nil {
-		log.Printf("Error deleting gost config %s: %v", name, err)
-		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: fmt.Sprintf("Error deleting config '%s': %v", name, err)})
-		return
-	}
-
-	b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: fmt.Sprintf("Gost config '%s' removed successfully.", name)})
+	// Add other handlers here from the original file if they existed
 }
 
-func handleStartGost(ctx context.Context, b *bot.Bot, message *models.Message, args []string) {
-	if len(args) != 1 {
-		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: "Usage: /start_gost <name>"})
-		return
-	}
-	name := args[0]
-	gostService := services.GetGostService()
-	config, err := gostService.GetGostConfigByName(name)
-	if err != nil {
-		log.Printf("Error getting gost config by name %s: %v", name, err)
-		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: fmt.Sprintf("Config with name '%s' not found.", name)})
-		return
-	}
-
-	if config.Status == "up" {
-		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: fmt.Sprintf("Gost service '%s' is already marked as running.", name)})
-		return
-	}
-
-	if err := gostService.StartGost(config); err != nil {
-		log.Printf("Error starting gost service %s: %v", name, err)
-		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: fmt.Sprintf("Error starting gost service '%s': %v", name, err)})
-		return
-	}
-
-	b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: fmt.Sprintf("Gost service '%s' started successfully.", name)})
-}
-
-func handleStopGost(ctx context.Context, b *bot.Bot, message *models.Message, args []string) {
-	if len(args) != 1 {
-		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: "Usage: /stop_gost <name>"})
-		return
-	}
-	name := args[0]
-	gostService := services.GetGostService()
-	config, err := gostService.GetGostConfigByName(name)
-	if err != nil {
-		log.Printf("Error getting gost config by name %s: %v", name, err)
-		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: fmt.Sprintf("Config with name '%s' not found.", name)})
-		return
-	}
-
-	if config.Status != "up" {
-		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: fmt.Sprintf("Gost service '%s' is not marked as running.", name)})
-		return
-	}
-
-	if err := gostService.StopGost(config.ID); err != nil {
-		log.Printf("Error stopping gost service %s: %v", name, err)
-		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: fmt.Sprintf("Error stopping gost service '%s': %v", name, err)})
-		return
-	}
-
-	b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: fmt.Sprintf("Gost service '%s' stopped successfully.", name)})
-}
-
-func handleStartChisel(ctx context.Context, b *bot.Bot, message *models.Message, args []string) {
-	if len(args) != 1 {
-		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: "Usage: /start_chisel <name>"})
-		return
-	}
-	name := args[0]
-	chiselService := services.GetChiselService()
-	config, err := chiselService.GetChiselConfigByName(name)
-	if err != nil {
-		log.Printf("Error getting chisel config by name %s: %v", name, err)
-		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: fmt.Sprintf("Config with name '%s' not found.", name)})
-		return
-	}
-
-	if config.PID > 0 {
-		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: fmt.Sprintf("Chisel service '%s' is already marked as running.", name)})
-		return
-	}
-
-	if err := chiselService.StartChisel(config); err != nil {
-		log.Printf("Error starting chisel service %s: %v", name, err)
-		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: fmt.Sprintf("Error starting chisel service '%s': %v", name, err)})
-		return
-	}
-
-	b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: fmt.Sprintf("Chisel service '%s' started successfully.", name)})
-}
-
-func handleStopChisel(ctx context.Context, b *bot.Bot, message *models.Message, args []string) {
-	if len(args) != 1 {
-		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: "Usage: /stop_chisel <name>"})
-		return
-	}
-	name := args[0]
-	chiselService := services.GetChiselService()
-	config, err := chiselService.GetChiselConfigByName(name)
-	if err != nil {
-		log.Printf("Error getting chisel config by name %s: %v", name, err)
-		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: fmt.Sprintf("Config with name '%s' not found.", name)})
-		return
-	}
-
-	if config.PID == 0 {
-		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: fmt.Sprintf("Chisel service '%s' is not marked as running.", name)})
-		return
-	}
-
-	if err := chiselService.StopChisel(config); err != nil {
-		log.Printf("Error stopping chisel service %s: %v", name, err)
-		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: fmt.Sprintf("Error stopping chisel service '%s': %v", name, err)})
-		return
-	}
-
-	b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: fmt.Sprintf("Chisel service '%s' stopped successfully.", name)})
-}
-
-func handleListInbounds(ctx context.Context, b *bot.Bot, message *models.Message) {
-	inbounds, err := services.GetAllInbounds()
-	if err != nil {
-		log.Printf("Error getting all inbounds: %v", err)
-		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: "Error getting inbounds."})
-		return
-	}
-
-	if len(inbounds) == 0 {
-		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: "No inbounds configured."})
-		return
-	}
-
-	var response strings.Builder
-	response.WriteString("Configured Inbounds:\n")
-	for _, inbound := range inbounds {
-		response.WriteString(fmt.Sprintf("- ID: %d, Tag: %s, Type: %s\n", inbound.Id, inbound.Tag, inbound.Type))
-	}
-
-	b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: response.String()})
-}
-
-func handleListOutbounds(ctx context.Context, b *bot.Bot, message *models.Message) {
-	outbounds, err := services.GetAllOutbounds()
-	if err != nil {
-		log.Printf("Error getting all outbounds: %v", err)
-		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: "Error getting outbounds."})
-		return
-	}
-
-	if len(outbounds) == 0 {
-		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: "No outbounds configured."})
-		return
-	}
-
-	var response strings.Builder
-	response.WriteString("Configured Outbounds:\n")
-	for _, outbound := range outbounds {
-		response.WriteString(fmt.Sprintf("- ID: %d, Tag: %s, Type: %s\n", outbound.Id, outbound.Tag, outbound.Type))
-	}
-
-	b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: response.String()})
-}
-
-// MTProto Proxy Handlers
-func handleAddMTProto(ctx context.Context, b *bot.Bot, message *models.Message, args []string) {
-	if len(args) < 3 || len(args) > 4 {
-		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: "Usage: /add_mtproto <name> <port> <secret> [ad_tag]"})
-		return
+func handleAddUdpTunnel(c telebot.Context, udpTunnelService *service.UdpTunnelService) error {
+	args := c.Args()
+	if len(args) < 4 {
+		return c.Send("Usage: /add_udptunnel <name> <mode> <listen_port> <remote_addr:port>")
 	}
 
 	name := args[0]
-	port, err := strconv.Atoi(args[1])
+	mode := args[1]
+	listenPort, err := strconv.Atoi(args[2])
 	if err != nil {
-		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: "Invalid port number."})
-		return
+		return c.Send("Invalid listen port number.")
 	}
-	secret := args[2]
-	adTag := ""
-	if len(args) == 4 {
-		adTag = args[3]
-	}
+	remoteAddr := args[3]
 
-	config := model.MTProtoProxyConfig{
-		Name:       name,
-		ListenPort: port,
-		Secret:     secret,
-		AdTag:      adTag,
-		Status:     "down", // Initially down
+	config := model.UdpTunnelConfig{
+		Name:          name,
+		Mode:          mode,
+		ListenPort:    listenPort,
+		RemoteAddress: remoteAddr,
+		Status:        "stopped",
 	}
 
-	mtprotoService := services.GetMTProtoService()
-	if err := mtprotoService.CreateMTProtoConfig(&config); err != nil {
-		log.Printf("Error creating MTProto Proxy config: %v", err)
-		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: fmt.Sprintf("Error creating config: %v", err)})
-		return
+	if err := udpTunnelService.CreateUdpTunnel(&config); err != nil {
+		log.Printf("Error creating UDP Tunnel config: %v", err)
+		return c.Send(fmt.Sprintf("Error creating config: %v", err))
 	}
 
-	b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: fmt.Sprintf("MTProto Proxy config '%s' created. Starting...", name)})
-
-	if err := mtprotoService.StartMTProto(&config); err != nil {
-		log.Printf("Error starting MTProto Proxy: %v", err)
-		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: fmt.Sprintf("Error starting proxy: %v", err)})
-		return
+	if err := udpTunnelService.StartUdpTunnel(&config); err != nil {
+		log.Printf("Error starting UDP Tunnel: %v", err)
+		return c.Send(fmt.Sprintf("Error starting tunnel: %v", err))
 	}
 
-	b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: fmt.Sprintf("MTProto Proxy '%s' started successfully on port %d.", name, port)})
+	return c.Send(fmt.Sprintf("UDP Tunnel '%s' created and started successfully.", name))
 }
 
-func handleListMTProto(ctx context.Context, b *bot.Bot, message *models.Message) {
-	mtprotoService := services.GetMTProtoService()
-	configs, err := mtprotoService.GetAllMTProtoConfigs()
+func handleListUdpTunnels(c telebot.Context, udpTunnelService *service.UdpTunnelService) error {
+	configs, err := udpTunnelService.GetAllUdpTunnels()
 	if err != nil {
-		log.Printf("Error getting MTProto Proxy configs: %v", err)
-		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: "Error getting MTProto Proxy configs."})
-		return
+		log.Printf("Error getting UDP Tunnel configs: %v", err)
+		return c.Send("Error getting UDP Tunnel configs.")
 	}
 
 	if len(configs) == 0 {
-		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: "No MTProto Proxy services configured."})
-		return
+		return c.Send("No UDP Tunnel services configured.")
 	}
 
 	var response strings.Builder
-	response.WriteString("Configured MTProto Proxy Services:\n")
+	response.WriteString("Configured UDP Tunnel Services:\n")
 	for _, config := range configs {
-		response.WriteString(fmt.Sprintf("\n- Name: %s\n", config.Name))
+		response.WriteString(fmt.Sprintf("\n- Name: %s (ID: %d)\n", config.Name, config.ID))
+		response.WriteString(fmt.Sprintf("  Mode: %s\n", config.Mode))
 		response.WriteString(fmt.Sprintf("  Listen Port: %d\n", config.ListenPort))
-		response.WriteString(fmt.Sprintf("  Secret: %s\n", config.Secret))
-		if config.AdTag != "" {
-			response.WriteString(fmt.Sprintf("  Ad Tag: %s\n", config.AdTag))
-		}
+		response.WriteString(fmt.Sprintf("  Remote Address: %s\n", config.RemoteAddress))
 		response.WriteString(fmt.Sprintf("  Status: %s\n", config.Status))
-	}
-
-	b.SendMessage(ctx, &bot.SendMessageParams{
-		ChatID: message.Chat.ID,
-		Text:   response.String(),
-	})
-}
-
-func handleRemoveMTProto(ctx context.Context, b *bot.Bot, message *models.Message, args []string) {
-	if len(args) != 1 {
-		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: "Usage: /remove_mtproto <name>"})
-		return
-	}
-	name := args[0]
-	mtprotoService := services.GetMTProtoService()
-	config, err := mtprotoService.GetMTProtoConfigByName(name)
-	if err != nil {
-		log.Printf("Error getting MTProto Proxy config by name %s: %v", name, err)
-		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: fmt.Sprintf("Config with name '%s' not found.", name)})
-		return
-	}
-
-	if config.Status == "up" {
-		if err := mtprotoService.StopMTProto(config.ID); err != nil {
-			log.Printf("Error stopping MTProto Proxy %s before removing: %v", name, err)
-			b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: fmt.Sprintf("Proxy '%s' was running, attempted to stop it before removal. It will be removed anyway.", name)})
-		} else {
-			b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: fmt.Sprintf("Proxy '%s' stopped.", name)})
+		if config.ProcessID != 0 {
+			response.WriteString(fmt.Sprintf("  PID: %d\n", config.ProcessID))
 		}
 	}
 
-	if err := mtprotoService.DeleteMTProtoConfig(config.ID); err != nil {
-		log.Printf("Error deleting MTProto Proxy config %s: %v", name, err)
-		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: fmt.Sprintf("Error deleting config '%s': %v", name, err)})
-		return
-	}
-
-	b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: fmt.Sprintf("MTProto Proxy config '%s' removed successfully.", name)})
+	return c.Send(response.String())
 }
 
-func handleStartMTProto(ctx context.Context, b *bot.Bot, message *models.Message, args []string) {
+func handleRemoveUdpTunnel(c telebot.Context, udpTunnelService *service.UdpTunnelService) error {
+	args := c.Args()
 	if len(args) != 1 {
-		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: "Usage: /start_mtproto <name>"})
-		return
+		return c.Send("Usage: /remove_udptunnel <name>")
 	}
 	name := args[0]
-	mtprotoService := services.GetMTProtoService()
-	config, err := mtprotoService.GetMTProtoConfigByName(name)
+	config, err := udpTunnelService.GetUdpTunnelByName(name)
 	if err != nil {
-		log.Printf("Error getting MTProto Proxy config by name %s: %v", name, err)
-		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: fmt.Sprintf("Config with name '%s' not found.", name)})
-		return
+		return c.Send(fmt.Sprintf("Config with name '%s' not found.", name))
 	}
 
-	if config.Status == "up" {
-		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: fmt.Sprintf("MTProto Proxy '%s' is already running.", name)})
-		return
+	if err := udpTunnelService.DeleteUdpTunnel(config.ID); err != nil {
+		return c.Send(fmt.Sprintf("Error deleting config '%s': %v", name, err))
 	}
 
-	if err := mtprotoService.StartMTProto(config); err != nil {
-		log.Printf("Error starting MTProto Proxy %s: %v", name, err)
-		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: fmt.Sprintf("Error starting proxy '%s': %v", name, err)})
-		return
-	}
-
-	b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: fmt.Sprintf("MTProto Proxy '%s' started successfully.", name)})
+	return c.Send(fmt.Sprintf("UDP Tunnel config '%s' removed successfully.", name))
 }
 
-func handleStopMTProto(ctx context.Context, b *bot.Bot, message *models.Message, args []string) {
+func handleStartUdpTunnel(c telebot.Context, udpTunnelService *service.UdpTunnelService) error {
+	args := c.Args()
 	if len(args) != 1 {
-		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: "Usage: /stop_mtproto <name>"})
-		return
+		return c.Send("Usage: /start_udptunnel <name>")
 	}
 	name := args[0]
-	mtprotoService := services.GetMTProtoService()
-	config, err := mtprotoService.GetMTProtoConfigByName(name)
+	config, err := udpTunnelService.GetUdpTunnelByName(name)
 	if err != nil {
-		log.Printf("Error getting MTProto Proxy config by name %s: %v", name, err)
-		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: fmt.Sprintf("Config with name '%s' not found.", name)})
-		return
+		return c.Send(fmt.Sprintf("Config with name '%s' not found.", name))
 	}
 
-	if config.Status == "down" {
-		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: fmt.Sprintf("MTProto Proxy '%s' is not running.", name)})
-		return
+	if config.Status == "running" {
+		return c.Send(fmt.Sprintf("UDP Tunnel '%s' is already running.", name))
 	}
 
-	if err := mtprotoService.StopMTProto(config.ID); err != nil {
-		log.Printf("Error stopping MTProto Proxy %s: %v", name, err)
-		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: fmt.Sprintf("Error stopping proxy '%s': %v", name, err)})
-		return
+	if err := udpTunnelService.StartUdpTunnel(config); err != nil {
+		return c.Send(fmt.Sprintf("Error starting UDP Tunnel service '%s': %v", name, err))
 	}
 
-	b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: fmt.Sprintf("MTProto Proxy '%s' stopped successfully.", name)})
+	return c.Send(fmt.Sprintf("UDP Tunnel service '%s' started successfully.", name))
 }
 
-func handleGenerateMTProtoSecret(ctx context.Context, b *bot.Bot, message *models.Message) {
-	secret, err := service.GenerateMTProtoSecret()
-	if err != nil {
-		log.Printf("Error generating MTProto secret: %v", err)
-		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: fmt.Sprintf("Error generating secret: %v", err)})
-		return
-	}
-	b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: fmt.Sprintf("Generated MTProto Secret: `%s`", secret)})
-}
-
-// GRE Tunnel Handlers
-func handleAddGre(ctx context.Context, b *bot.Bot, message *models.Message, args []string) {
-	if len(args) < 3 || len(args) > 4 {
-		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: "Usage: /add_gre <name> <local_ip> <remote_ip> [interface_name]"})
-		return
-	}
-
-	name := args[0]
-	localIP := args[1]
-	remoteIP := args[2]
-	interfaceName := ""
-	if len(args) == 4 {
-		interfaceName = args[3]
-	}
-
-	config := model.GreTunnel{
-		Name:          name,
-		LocalAddress:  localIP,
-		RemoteAddress: remoteIP,
-		InterfaceName: interfaceName,
-		Status:        "down", // Initially down
-	}
-
-	greService := services.GetGreService()
-	if err := greService.CreateGreTunnel(&config); err != nil {
-		log.Printf("Error creating GRE Tunnel config: %v", err)
-		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: fmt.Sprintf("Error creating config: %v", err)})
-		return
-	}
-
-	b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: fmt.Sprintf("GRE Tunnel config '%s' created and started successfully.", name)})
-}
-
-func handleListGre(ctx context.Context, b *bot.Bot, message *models.Message) {
-	greService := services.GetGreService()
-	configs, err := greService.GetAllGreTunnels()
-	if err != nil {
-		log.Printf("Error getting GRE Tunnel configs: %v", err)
-		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: "Error getting GRE Tunnel configs."})
-		return
-	}
-
-	if len(configs) == 0 {
-		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: "No GRE Tunnel services configured."})
-		return
-	}
-
-	var response strings.Builder
-	response.WriteString("Configured GRE Tunnel Services:\n")
-	for _, config := range configs {
-		response.WriteString(fmt.Sprintf("\n- Name: %s\n", config.Name))
-		response.WriteString(fmt.Sprintf("  Local IP: %s\n", config.LocalAddress))
-		response.WriteString(fmt.Sprintf("  Remote IP: %s\n", config.RemoteAddress))
-		response.WriteString(fmt.Sprintf("  Interface Name: %s\n", config.InterfaceName))
-		response.WriteString(fmt.Sprintf("  Status: %s\n", config.Status))
-	}
-
-	b.SendMessage(ctx, &bot.SendMessageParams{
-		ChatID: message.Chat.ID,
-		Text:   response.String(),
-	})
-}
-
-func handleRemoveGre(ctx context.Context, b *bot.Bot, message *models.Message, args []string) {
+func handleStopUdpTunnel(c telebot.Context, udpTunnelService *service.UdpTunnelService) error {
+	args := c.Args()
 	if len(args) != 1 {
-		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: "Usage: /remove_gre <name>"})
-		return
+		return c.Send("Usage: /stop_udptunnel <name>")
 	}
 	name := args[0]
-	greService := services.GetGreService()
-	config, err := greService.GetGreTunnelByName(name)
+	config, err := udpTunnelService.GetUdpTunnelByName(name)
 	if err != nil {
-		log.Printf("Error getting GRE Tunnel config by name %s: %v", name, err)
-		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: fmt.Sprintf("Config with name '%s' not found.", name)})
-		return
+		return c.Send(fmt.Sprintf("Config with name '%s' not found.", name))
 	}
 
-	if err := greService.DeleteGreTunnel(config.ID); err != nil {
-		log.Printf("Error deleting GRE Tunnel config %s: %v", name, err)
-		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: fmt.Sprintf("Error deleting config '%s': %v", name, err)})
-		return
+	if config.Status != "running" {
+		return c.Send(fmt.Sprintf("UDP Tunnel '%s' is not running.", name))
 	}
 
-	b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: fmt.Sprintf("GRE Tunnel config '%s' removed successfully.", name)})
-}
-
-func handleStartGre(ctx context.Context, b *bot.Bot, message *models.Message, args []string) {
-	if len(args) != 1 {
-		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: "Usage: /start_gre <name>"})
-		return
-	}
-	name := args[0]
-	greService := services.GetGreService()
-	config, err := greService.GetGreTunnelByName(name)
-	if err != nil {
-		log.Printf("Error getting GRE Tunnel config by name %s: %v", name, err)
-		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: fmt.Sprintf("Config with name '%s' not found.", name)})
-		return
+	if err := udpTunnelService.StopUdpTunnel(config.ID); err != nil {
+		return c.Send(fmt.Sprintf("Error stopping UDP Tunnel service '%s': %v", name, err))
 	}
 
-	if config.Status == "up" {
-		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: fmt.Sprintf("GRE Tunnel '%s' is already running.", name)})
-		return
-	}
-
-	// Re-create the tunnel
-	if err := greService.CreateGreTunnel(config); err != nil {
-		log.Printf("Error starting GRE Tunnel %s: %v", name, err)
-		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: fmt.Sprintf("Error starting tunnel '%s': %v", name, err)})
-		return
-	}
-
-	b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: fmt.Sprintf("GRE Tunnel '%s' started successfully.", name)})
-}
-
-func handleStopGre(ctx context.Context, b *bot.Bot, message *models.Message, args []string) {
-	if len(args) != 1 {
-		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: "Usage: /stop_gre <name>"})
-		return
-	}
-	name := args[0]
-	greService := services.GetGreService()
-	config, err := greService.GetGreTunnelByName(name)
-	if err != nil {
-		log.Printf("Error getting GRE Tunnel config by name %s: %v", name, err)
-		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: fmt.Sprintf("Config with name '%s' not found.", name)})
-		return
-	}
-
-	if config.Status == "down" {
-		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: fmt.Sprintf("GRE Tunnel '%s' is not running.", name)})
-		return
-	}
-
-	// Delete the tunnel to stop it
-	if err := greService.DeleteGreTunnel(config.ID); err != nil {
-		log.Printf("Error stopping GRE Tunnel %s: %v", name, err)
-		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: fmt.Sprintf("Error stopping tunnel '%s': %v", name, err)})
-		return
-	}
-
-	b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: fmt.Sprintf("GRE Tunnel '%s' stopped successfully.", name)})
-}
-
-// TAP Tunnel Handlers
-func handleAddTap(ctx context.Context, b *bot.Bot, message *models.Message, args []string) {
-	if len(args) < 2 || len(args) > 4 {
-		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: "Usage: /add_tap <name> <ip_address> [mtu] [interface_name]"})
-		return
-	}
-
-	name := args[0]
-	ipAddress := args[1]
-	mtu := 0 // Default MTU
-	interfaceName := ""
-
-	if len(args) >= 3 {
-		if val, err := strconv.Atoi(args[2]); err == nil {
-			mtu = val
-		} else {
-			// If it's not an int, assume it's interface_name
-			interfaceName = args[2]
-		}
-	}
-	if len(args) == 4 {
-		interfaceName = args[3]
-	}
-
-	config := model.TapTunnel{
-		Name:          name,
-		LocalAddress:  ipAddress,
-		MTU:           mtu,
-		InterfaceName: interfaceName,
-		Status:        "down", // Initially down
-	}
-
-	tapService := services.GetTapService()
-	if err := tapService.CreateTapTunnel(&config); err != nil {
-		log.Printf("Error creating TAP Tunnel config: %v", err)
-		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: fmt.Sprintf("Error creating config: %v", err)})
-		return
-	}
-
-	b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: fmt.Sprintf("TAP Tunnel config '%s' created and started successfully.", name)})
-}
-
-func handleListTap(ctx context.Context, b *bot.Bot, message *models.Message) {
-	tapService := services.GetTapService()
-	configs, err := tapService.GetAllTapTunnels()
-	if err != nil {
-		log.Printf("Error getting TAP Tunnel configs: %v", err)
-		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: "Error getting TAP Tunnel configs."})
-		return
-	}
-
-	if len(configs) == 0 {
-		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: "No TAP Tunnel services configured."})
-		return
-	}
-
-	var response strings.Builder
-	response.WriteString("Configured TAP Tunnel Services:\n")
-	for _, config := range configs {
-		response.WriteString(fmt.Sprintf("\n- Name: %s\n", config.Name))
-		response.WriteString(fmt.Sprintf("  Local IP: %s\n", config.LocalAddress))
-		if config.MTU > 0 {
-			response.WriteString(fmt.Sprintf("  MTU: %d\n", config.MTU))
-		}
-		response.WriteString(fmt.Sprintf("  Interface Name: %s\n", config.InterfaceName))
-		response.WriteString(fmt.Sprintf("  Status: %s\n", config.Status))
-	}
-
-	b.SendMessage(ctx, &bot.SendMessageParams{
-		ChatID: message.Chat.ID,
-		Text:   response.String(),
-	})
-}
-
-func handleRemoveTap(ctx context.Context, b *bot.Bot, message *models.Message, args []string) {
-	if len(args) != 1 {
-		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: "Usage: /remove_tap <name>"})
-		return
-	}
-	name := args[0]
-	tapService := services.GetTapService()
-	config, err := tapService.GetTapTunnelByName(name)
-	if err != nil {
-		log.Printf("Error getting TAP Tunnel config by name %s: %v", name, err)
-		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: fmt.Sprintf("Config with name '%s' not found.", name)})
-		return
-	}
-
-	if err := tapService.DeleteTapTunnel(config.ID); err != nil {
-		log.Printf("Error deleting TAP Tunnel config %s: %v", name, err)
-		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: fmt.Sprintf("Error deleting config '%s': %v", name, err)})
-		return
-	}
-
-	b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: fmt.Sprintf("TAP Tunnel config '%s' removed successfully.", name)})
-}
-
-func handleStartTap(ctx context.Context, b *bot.Bot, message *models.Message, args []string) {
-	if len(args) != 1 {
-		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: "Usage: /start_tap <name>"})
-		return
-	}
-	name := args[0]
-	tapService := services.GetTapService()
-	config, err := tapService.GetTapTunnelByName(name)
-	if err != nil {
-		log.Printf("Error getting TAP Tunnel config by name %s: %v", name, err)
-		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: fmt.Sprintf("Config with name '%s' not found.", name)})
-		return
-	}
-
-	if config.Status == "up" {
-		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: fmt.Sprintf("TAP Tunnel '%s' is already running.", name)})
-		return
-	}
-
-	// Re-create the tunnel
-	if err := tapService.CreateTapTunnel(config); err != nil {
-		log.Printf("Error starting TAP Tunnel %s: %v", name, err)
-		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: fmt.Sprintf("Error starting tunnel '%s': %v", name, err)})
-		return
-	}
-
-	b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: fmt.Sprintf("TAP Tunnel '%s' started successfully.", name)})
-}
-
-func handleStopTap(ctx context.Context, b *bot.Bot, message *models.Message, args []string) {
-	if len(args) != 1 {
-		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: "Usage: /stop_tap <name>"})
-		return
-	}
-	name := args[0]
-	tapService := services.GetTapService()
-	config, err := tapService.GetTapTunnelByName(name)
-	if err != nil {
-		log.Printf("Error getting TAP Tunnel config by name %s: %v", name, err)
-		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: fmt.Sprintf("Config with name '%s' not found.", name)})
-		return
-	}
-
-	if config.Status == "down" {
-		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: fmt.Sprintf("TAP Tunnel '%s' is not running.", name)})
-		return
-	}
-
-	// Delete the tunnel to stop it
-	if err := tapService.DeleteTapTunnel(config.ID); err != nil {
-		log.Printf("Error stopping TAP Tunnel %s: %v", name, err)
-		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: fmt.Sprintf("Error stopping tunnel '%s': %v", name, err)})
-		return
-	}
-
-	b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: fmt.Sprintf("TAP Tunnel '%s' stopped successfully.", name)})
-}
-
-// Subscription Domain Handlers
-func handleSetSubDomain(ctx context.Context, b *bot.Bot, message *models.Message, args []string) {
-	if len(args) != 1 {
-		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: "Usage: /set_sub_domain <domain>"})
-		return
-	}
-	domain := args[0]
-	settingService := services.GetConfigService().SettingService // Access SettingService via ConfigService
-	if err := settingService.SetSubscriptionDomain(domain); err != nil {
-		log.Printf("Error setting subscription domain: %v", err)
-		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: fmt.Sprintf("Error setting subscription domain: %v", err)})
-		return
-	}
-	b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: fmt.Sprintf("Subscription domain set to: %s", domain)})
-}
-
-func handleGetSubDomain(ctx context.Context, b *bot.Bot, message *models.Message) {
-	settingService := services.GetConfigService().SettingService // Access SettingService via ConfigService
-	domain, err := settingService.GetWebDomain() // GetWebDomain now prioritizes subscriptionDomain
-	if err != nil {
-		log.Printf("Error getting subscription domain: %v", err)
-		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: fmt.Sprintf("Error getting subscription domain: %v", err)})
-		return
-	}
-	if domain == "" {
-		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: "Subscription domain is not set. Using default web domain."})
-	} else {
-		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: message.Chat.ID, Text: fmt.Sprintf("Current subscription domain: %s", domain)})
-	}
+	return c.Send(fmt.Sprintf("UDP Tunnel service '%s' stopped successfully.", name))
 }
 
