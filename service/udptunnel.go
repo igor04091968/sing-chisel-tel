@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"math/rand"
 	"net"
 	"sync"
 	"syscall"
@@ -52,7 +53,7 @@ func (s *UdpTunnelService) StartUdpTunnel(cfg *model.UdpTunnelConfig) error {
 	s.runningTunnels[cfg.ID] = instance
 	s.mu.Unlock()
 
-	log.Printf("Starting pure Go UDP tunnel '%s' (Mode: %s)", cfg.Name, cfg.Mode)
+	log.Printf("Starting pure Go UDP tunnel %s (Mode: %s)", cfg.Name, cfg.Mode)
 
 	go func() {
 		err := s.runTunnel(ctx, cfg) // Corrected function name
@@ -63,9 +64,9 @@ func (s *UdpTunnelService) StartUdpTunnel(cfg *model.UdpTunnelConfig) error {
 		// Cleanup
 		s.mu.Lock()
 		defer s.mu.Unlock()
-		
+
 		delete(s.runningTunnels, cfg.ID)
-		
+
 		var dbCfg model.UdpTunnelConfig
 		database := database.GetDB()
 		if err := database.First(&dbCfg, cfg.ID).Error; err == nil {
@@ -78,7 +79,7 @@ func (s *UdpTunnelService) StartUdpTunnel(cfg *model.UdpTunnelConfig) error {
 	}()
 
 	cfg.Status = "running"
-	cfg.ProcessID = 1 
+	cfg.ProcessID = 1
 	return s.db.Save(cfg).Error
 }
 
@@ -108,8 +109,6 @@ func (s *UdpTunnelService) runTunnel(ctx context.Context, cfg *model.UdpTunnelCo
 	defer syscall.Close(fd)
 
 	// 3. Set DSCP value on the socket
-	// The DSCP value is the top 6 bits of the 8-bit ToS field.
-	// DSCP = ToS >> 2. So, ToS = DSCP << 2.
 	tos := int(cfg.DSCP) << 2
 	if err := syscall.SetsockoptInt(fd, syscall.IPPROTO_IP, syscall.IP_TOS, tos); err != nil {
 		return fmt.Errorf("failed to set DSCP (IP_TOS) on raw socket: %w", err)
@@ -129,14 +128,26 @@ func (s *UdpTunnelService) runTunnel(ctx context.Context, cfg *model.UdpTunnelCo
 		default:
 			n, _, err := conn.ReadFromUDP(buffer)
 			if err != nil {
+				if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
+					continue
+				}
 				return err
 			}
 			payload := buffer[:n]
 
-			// Craft and send the FakeTCP packet
-			err = sendFakeTCPPacket(fd, destIP, destPort, payload, tos)
+			switch cfg.Mode {
+			case "faketcp":
+				err = sendFakeTCPPacket(fd, destIP, destPort, payload, tos)
+			case "icmp":
+				err = sendICMPPacket(fd, destIP, payload, tos)
+			case "raw_udp":
+				err = sendRawUDPPacket(fd, destIP, destPort, payload, tos)
+			default:
+				err = fmt.Errorf("unsupported tunnel mode: %s", cfg.Mode)
+			}
+
 			if err != nil {
-				log.Printf("Failed to send FakeTCP packet: %v", err)
+				log.Printf("Failed to send packet in mode %s: %v", cfg.Mode, err)
 			}
 		}
 	}
@@ -153,7 +164,7 @@ func sendFakeTCPPacket(fd int, destIP net.IP, destPort uint16, payload []byte, t
 		IHL:      5,
 		TOS:      uint8(tos),
 		Length:   20 + 20 + uint16(len(payload)), // IP header + TCP header + payload
-		Id:       12345, // Should be randomized
+		Id:       uint16(rand.Intn(65535)),
 		Flags:    layers.IPv4DontFragment,
 		TTL:      64,
 		Protocol: layers.IPProtocolTCP,
@@ -161,11 +172,11 @@ func sendFakeTCPPacket(fd int, destIP net.IP, destPort uint16, payload []byte, t
 		DstIP:    destIP,
 	}
 	tcpLayer := &layers.TCP{
-		SrcPort: layers.TCPPort(12345), // Should be randomized
+		SrcPort: layers.TCPPort(rand.Intn(65535-1024) + 1024),
 		DstPort: layers.TCPPort(destPort),
 		SYN:     true, // This makes it "FakeTCP"
 		Window:  14600,
-		Seq:     1105024978, // Should be randomized
+		Seq:     rand.Uint32(),
 	}
 	tcpLayer.SetNetworkLayerForChecksum(ipLayer)
 
@@ -188,7 +199,22 @@ func sendFakeTCPPacket(fd int, destIP net.IP, destPort uint16, payload []byte, t
 	return syscall.Sendto(fd, buf.Bytes(), 0, &addr)
 }
 
-func parseRemoteAddress(addr string) (net.IP, uint16, error) {
+// sendICMPPacket is a placeholder for the ICMP mode implementation.
+func sendICMPPacket(fd int, destIP net.IP, payload []byte, tos int) error {
+	log.Printf("ICMP mode is not yet implemented.")
+	// TODO: Implement ICMP packet crafting and sending
+	return nil
+}
+
+// sendRawUDPPacket is a placeholder for the raw UDP mode implementation.
+func sendRawUDPPacket(fd int, destIP net.IP, destPort uint16, payload []byte, tos int) error {
+	log.Printf("Raw UDP mode is not yet implemented.")
+	// TODO: Implement raw UDP packet crafting and sending
+	return nil
+}
+
+func parseRemoteAddress(addr string) (net.I
+P, uint16, error) {
 	host, portStr, err := net.SplitHostPort(addr)
 	if err != nil {
 		return nil, 0, fmt.Errorf("invalid remote address format: %w", err)
@@ -277,3 +303,4 @@ func (s *UdpTunnelService) AutoStartUdpTunnels() {
 		}
 	}
 }
+
