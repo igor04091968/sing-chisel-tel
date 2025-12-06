@@ -1,9 +1,9 @@
 ---
 services:
   s-ui:
-    image: alireza7/s-ui
-    container_name: s-ui
-    hostname: "s-ui"
+    build: .
+    container_name: s-ui-dev
+    hostname: "s-ui-dev"
     volumes:
       - "./db:/app/db"
       - "./cert:/app/cert"
@@ -19,4 +19,4 @@ services:
 networks:
   s-ui:
     driver: bridge
-  
+
