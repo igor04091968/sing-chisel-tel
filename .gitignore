@@ -30,3 +30,12 @@ windows/sui-*.exe
 # Editor directories and files
 .idea
 .vscode
+
+# Terraform files
+.terraform/
+*.tfstate
+*.tfstate.backup
+
+# Backup files
+*.backup
+
