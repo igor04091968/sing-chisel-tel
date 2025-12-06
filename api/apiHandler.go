@@ -45,7 +45,7 @@ func NewAPIHandler(g *gin.RouterGroup, a2 *APIv2Handler, bundle *service.Service
 			a.ApiService.GostService = *bundle.GostService
 		}
 		if bundle.UdpTunnelService != nil {
-			a.ApiService.UdpTunnelService = *bundle.UdpTunnelService
+			a.ApiService.UdpTunnelService = bundle.UdpTunnelService
 		}
 	}
 

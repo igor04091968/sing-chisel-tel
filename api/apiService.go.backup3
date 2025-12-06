@@ -32,7 +32,7 @@ type ApiService struct {
 	service.MTProtoService
 	service.GreService
 	service.TapService
-	*service.UdpTunnelService
+	service.UdpTunnelService
 }
 
 func (a *ApiService) LoadData(c *gin.Context) {
