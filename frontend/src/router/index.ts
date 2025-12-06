@@ -28,7 +28,7 @@ const routes = [
         path: '/clients',
         name: 'pages.clients',
         component: () => import('@/views/Clients.vue'),
-      },  
+      },
       {
         path: '/outbounds',
         name: 'pages.outbounds',
@@ -38,6 +38,11 @@ const routes = [
         path: '/services',
         name: 'pages.services',
         component: () => import('@/views/Services.vue'),
+      },
+      {
+        path: '/udptunnels',
+        name: 'pages.udptunnels',
+        component: () => import('@/views/UdpTunnels.vue'),
       },
       {
         path: '/endpoints',
@@ -121,3 +126,4 @@ const loadDataInterval = () => {
 }
 
 export default router
+

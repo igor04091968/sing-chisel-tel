@@ -132,7 +132,7 @@ func (a *ApiService) getData(c *gin.Context) (interface{}, error) {
 		data["mtproto"] = mtprotoConfigs
 		data["gre"] = greConfigs
 		data["tap"] = tapConfigs
-		data["udptunnels"] = udpTunnelConfigs
+		data["udptunnel"] = udpTunnelConfigs
 		data["subURI"] = subURI
 		data["enableTraffic"] = trafficAge > 0
 		data["onlines"] = onlines
@@ -197,7 +197,7 @@ func (a *ApiService) LoadPartialData(c *gin.Context, objs []string) error {
 				return err
 			}
 			data[obj] = tapConfigs
-		case "udptunnels":
+		case "udptunnel":
 			udpTunnelConfigs, err := a.UdpTunnelService.GetAllUdpTunnels()
 			if err != nil {
 				return err

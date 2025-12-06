@@ -182,6 +182,51 @@ func (a *APIHandler) postHandler(c *gin.Context) {
 		jsonMsg(c, "tap_delete", err)
 	// case "tap_update":
 	// 	a.ApiService.UpdateTap(c)
+    case "udp_tunnel_save":
+        var config model.UdpTunnelConfig
+        if err := c.ShouldBindJSON(&config); err != nil {
+            jsonMsg(c, "udp_tunnel_save", err)
+            return
+        }
+        err := a.ApiService.CreateUdpTunnel(&config)
+        jsonMsg(c, "udp_tunnel_save", err)
+    case "udp_tunnel_start":
+        id, err := strconv.ParseUint(c.PostForm("id"), 10, 32)
+        if err != nil {
+            jsonMsg(c, "udp_tunnel_start", err)
+            return
+        }
+        cfg, err := a.ApiService.GetUdpTunnelByID(uint(id))
+        if err != nil {
+            jsonMsg(c, "udp_tunnel_start", err)
+            return
+        }
+        err = a.ApiService.StartUdpTunnel(cfg)
+        jsonMsg(c, "udp_tunnel_start", err)
+    case "udp_tunnel_stop":
+        id, err := strconv.ParseUint(c.PostForm("id"), 10, 32)
+        if err != nil {
+            jsonMsg(c, "udp_tunnel_stop", err)
+            return
+        }
+        err = a.ApiService.StopUdpTunnel(uint(id))
+        jsonMsg(c, "udp_tunnel_stop", err)
+    case "udp_tunnel_delete":
+        id, err := strconv.ParseUint(c.PostForm("id"), 10, 32)
+        if err != nil {
+            jsonMsg(c, "udp_tunnel_delete", err)
+            return
+        }
+        err = a.ApiService.DeleteUdpTunnel(uint(id))
+        jsonMsg(c, "udp_tunnel_delete", err)
+    case "udp_tunnel_update":
+        var config model.UdpTunnelConfig
+        if err := c.ShouldBindJSON(&config); err != nil {
+            jsonMsg(c, "udp_tunnel_update", err)
+            return
+        }
+        err := a.ApiService.UpdateUdpTunnel(&config)
+        jsonMsg(c, "udp_tunnel_update", err)
 	default:
 		jsonMsg(c, "failed", common.NewError("unknown action: ", action))
 	}
@@ -253,3 +298,4 @@ func (a *APIHandler) getHandler(c *gin.Context) {
 		jsonMsg(c, "failed", common.NewError("unknown action: ", action))
 	}
 }
+

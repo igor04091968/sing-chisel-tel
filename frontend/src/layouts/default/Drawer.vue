@@ -55,6 +55,7 @@ const menu = [
   { title: 'pages.outbounds', icon: 'mdi-cloud-upload',  path: '/outbounds' },
   { title: 'pages.endpoints', icon: 'mdi-cloud-tags',  path: '/endpoints' },
   { title: 'pages.services', icon: 'mdi-server',  path: '/services' },
+  { title: 'pages.udptunnels', icon: 'mdi-tunnel',  path: '/udptunnels' },
   { title: 'pages.tls', icon: 'mdi-certificate',  path: '/tls' },
   { title: 'pages.basics', icon: 'mdi-application-cog',  path: '/basics' },
   { title: 'pages.rules', icon: 'mdi-routes',  path: '/rules' },
