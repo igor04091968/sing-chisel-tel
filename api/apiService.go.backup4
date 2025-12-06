@@ -2,7 +2,6 @@ package api
 
 import (
 	"encoding/json"
-	"log"
 	"strconv"
 	"time"
 
@@ -39,7 +38,7 @@ type ApiService struct {
 func (a *ApiService) LoadData(c *gin.Context) {
 	data, err := a.getData(c)
 	if err != nil {
-		jsonMsg(c, "getData failed", err)
+		jsonMsg(c, "", err)
 		return
 	}
 	jsonObj(c, data, nil)
@@ -48,20 +47,11 @@ func (a *ApiService) LoadData(c *gin.Context) {
 func (a *ApiService) getData(c *gin.Context) (interface{}, error) {
 	data := make(map[string]interface{}, 0)
 	lu := c.Query("lu")
-
-	log.Println("DEBUG: Checking for changes...")
 	isUpdated, err := a.ConfigService.CheckChanges(lu)
 	if err != nil {
-		log.Printf("DEBUG: Error checking changes: %v", err)
 		return "", err
 	}
-
-	log.Println("DEBUG: Fetching onlines...")
 	onlines, err := a.StatsService.GetOnlines()
-	if err != nil {
-		log.Printf("DEBUG: Error fetching onlines: %v", err)
-		return "", err
-	}
 
 	sysInfo := a.ServerService.GetSingboxInfo()
 	if sysInfo["running"] == false {
@@ -71,111 +61,66 @@ func (a *ApiService) getData(c *gin.Context) (interface{}, error) {
 		}
 	}
 
+	if err != nil {
+		return "", err
+	}
 	if isUpdated {
-		log.Println("DEBUG: Data is updated, fetching all configs...")
-
-		log.Println("DEBUG: Fetching config...")
 		config, err := a.SettingService.GetConfig()
 		if err != nil {
-			log.Printf("DEBUG: Error fetching config: %v", err)
 			return "", err
 		}
-
-		log.Println("DEBUG: Fetching clients...")
 		clients, err := a.ClientService.GetAllUsers()
 		if err != nil {
-			log.Printf("DEBUG: Error fetching clients: %v", err)
 			return "", err
 		}
-
-		log.Println("DEBUG: Fetching tlsConfigs...")
 		tlsConfigs, err := a.TlsService.GetAll()
 		if err != nil {
-			log.Printf("DEBUG: Error fetching tlsConfigs: %v", err)
 			return "", err
 		}
-
-		log.Println("DEBUG: Fetching inbounds...")
 		inbounds, err := a.InboundService.GetAll()
 		if err != nil {
-			log.Printf("DEBUG: Error fetching inbounds: %v", err)
 			return "", err
 		}
-
-		log.Println("DEBUG: Fetching outbounds...")
 		outbounds, err := a.OutboundService.GetAll()
 		if err != nil {
-			log.Printf("DEBUG: Error fetching outbounds: %v", err)
 			return "", err
 		}
-
-		log.Println("DEBUG: Fetching endpoints...")
 		endpoints, err := a.EndpointService.GetAll()
 		if err != nil {
-			log.Printf("DEBUG: Error fetching endpoints: %v", err)
 			return "", err
 		}
-
-		log.Println("DEBUG: Fetching services...")
 		services, err := a.ServicesService.GetAll()
 		if err != nil {
-			log.Printf("DEBUG: Error fetching services: %v", err)
 			return "", err
 		}
-
-		log.Println("DEBUG: Fetching chiselConfigs...")
 		chiselConfigs, err := a.ChiselService.GetAllChiselConfigs()
 		if err != nil {
-			log.Printf("DEBUG: Error fetching chiselConfigs: %v", err)
 			return "", err
 		}
-
-		log.Println("DEBUG: Fetching mtprotoConfigs...")
 		mtprotoConfigs, err := a.MTProtoService.GetAllMTProtoProxies()
 		if err != nil {
-			log.Printf("DEBUG: Error fetching mtprotoConfigs: %v", err)
 			return "", err
 		}
-
-		log.Println("DEBUG: Fetching greConfigs...")
 		greConfigs, err := a.GreService.GetAllGreTunnels()
 		if err != nil {
-			log.Printf("DEBUG: Error fetching greConfigs: %v", err)
 			return "", err
 		}
-
-		log.Println("DEBUG: Fetching tapConfigs...")
 		tapConfigs, err := a.TapService.GetAllTapTunnels()
 		if err != nil {
-			log.Printf("DEBUG: Error fetching tapConfigs: %v", err)
 			return "", err
-		}
-
-		log.Println("DEBUG: Fetching udpTunnelConfigs...")
-		if a.UdpTunnelService == nil {
-			log.Println("DEBUG: UdpTunnelService is nil!")
 		}
 		udpTunnelConfigs, err := a.UdpTunnelService.GetAllUdpTunnels()
 		if err != nil {
-			log.Printf("DEBUG: Error fetching udpTunnelConfigs: %v", err)
 			return "", err
 		}
-
-		log.Println("DEBUG: Fetching subURI...")
 		subURI, err := a.SettingService.GetFinalSubURI(getHostname(c))
 		if err != nil {
-			log.Printf("DEBUG: Error fetching subURI: %v", err)
 			return "", err
 		}
-
-		log.Println("DEBUG: Fetching trafficAge...")
 		trafficAge, err := a.SettingService.GetTrafficAge()
 		if err != nil {
-			log.Printf("DEBUG: Error fetching trafficAge: %v", err)
 			return "", err
 		}
-
-		log.Println("DEBUG: Assembling data map...")
 		data["config"] = json.RawMessage(config)
 		data["clients"] = clients
 		data["tls"] = tlsConfigs
@@ -195,7 +140,6 @@ func (a *ApiService) getData(c *gin.Context) (interface{}, error) {
 		data["onlines"] = onlines
 	}
 
-	log.Println("DEBUG: getData successful.")
 	return data, nil
 }
 
@@ -378,8 +322,8 @@ func (a *ApiService) postActions(c *gin.Context) (string, json.RawMessage, error
 	return string(data["action"]), data["data"], nil
 }
 
-// APIHandler struct (assuming its defined elsewhere, e.g., in apiHandler.go)
-// For the purpose of this modification, well assume a.ApiService is available.
+// APIHandler struct (assuming it's defined elsewhere, e.g., in apiHandler.go)
+// For the purpose of this modification, we'll assume a.ApiService is available.
 // This function is not part of ApiService, but rather a handler that uses ApiService.
 // We need to find the actual postHandler function in api/apiHandler.go
 
@@ -394,7 +338,7 @@ func (a *ApiService) Login(c *gin.Context) {
 
 	sessionMaxAge, err := a.SettingService.GetSessionMaxAge()
 	if err != nil {
-		logger.Infof("Unable to get sessions max age from DB")
+		logger.Infof("Unable to get session's max age from DB")
 	}
 
 	err = SetLoginUser(c, loginUser, sessionMaxAge)
@@ -606,4 +550,3 @@ func (a *ApiService) DeleteGost(c *gin.Context) {
 	}
 	jsonMsg(c, "gost_delete", nil)
 }
-
