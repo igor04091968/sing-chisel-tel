@@ -29,6 +29,7 @@ mkdir -p "$DB_VOLUME_PATH"
 
 echo "--- Running Docker container: $CONTAINER_NAME ---"
 docker run -d \
+    --cap-add=NET_RAW \
     -p "$HOST_PORT":"$CONTAINER_PORT" \
     -v "$DB_VOLUME_PATH":/app/db \
     --name "$CONTAINER_NAME" \
