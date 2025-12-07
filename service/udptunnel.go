@@ -208,10 +208,12 @@ func (s *UdpTunnelService) runTunnelServer(ctx context.Context, cfg *model.UdpTu
 			// Read raw IP packets
 			n, _, err := syscall.Recvfrom(fd, packetBuffer, 0)
 			if err != nil {
-				// Log and continue, as some errors are transient
 				log.Printf("Error reading from raw socket for server %s: %v", cfg.Name, err)
 				continue
 			}
+
+			// Add a log to confirm raw packet reception
+			log.Printf("SERVER %s: Received raw packet of size %d", cfg.Name, n)
 
 			// Process the raw IP packet
 			packet := gopacket.NewPacket(packetBuffer[:n], layers.LayerTypeIPv4, gopacket.Default)
@@ -221,6 +223,9 @@ func (s *UdpTunnelService) runTunnelServer(ctx context.Context, cfg *model.UdpTu
 			if ipLayer != nil && tcpLayer != nil {
 				ip := ipLayer.(*layers.IPv4)
 				tcp := tcpLayer.(*layers.TCP)
+
+				log.Printf("SERVER %s: Parsed TCP packet. DstIP: %s, DstPort: %d, Flags: SYN=%t, ACK=%t, PSH=%t, URG=%t, FIN=%t, RST=%t",
+					cfg.Name, ip.DstIP, tcp.DstPort, tcp.SYN, tcp.ACK, tcp.PSH, tcp.URG, tcp.FIN, tcp.RST)
 
 				// Filter packets by destination port (cfg.ListenPort)
 				// and check if it resembles a faketcp packet.
