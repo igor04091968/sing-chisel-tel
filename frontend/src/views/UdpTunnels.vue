@@ -17,7 +17,7 @@
         <v-card-title>{{ item.Name }}</v-card-title>
         <v-card-subtitle>
           <v-chip :color="item.Status === 'running' ? 'success' : 'grey'" class="mr-2">{{ item.Status }}</v-chip>
-          Mode: {{ item.Mode }}
+          Mode: {{ item.Mode }}, Role: {{ item.Role }}
         </v-card-subtitle>
         <v-card-text>
           <v-row>

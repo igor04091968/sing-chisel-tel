@@ -9,6 +9,12 @@
           label="Mode"
           variant="outlined"
         />
+        <v-select
+          v-model="tunnel.Role"
+          :items="['client', 'server']"
+          label="Role"
+          variant="outlined"
+        />
         <v-text-field v-model.number="tunnel.ListenPort" label="Listen Port" type="number" variant="outlined" />
         <v-text-field v-model="tunnel.RemoteAddress" label="Remote Address (host:port)" variant="outlined" />
         <v-expansion-panels title="Advanced Options">
@@ -60,7 +66,7 @@ watch(() => props.visible, (newVal) => {
     if (!isNew.value) {
       tunnel.value = JSON.parse(props.data)
     } else {
-      tunnel.value = { Mode: 'faketcp' } // Default value
+      tunnel.value = { Mode: 'faketcp', Role: 'client' } // Default values
     }
   }
 })

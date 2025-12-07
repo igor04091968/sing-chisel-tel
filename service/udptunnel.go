@@ -169,17 +169,23 @@ func (s *UdpTunnelService) runTunnel(ctx context.Context, cfg *model.UdpTunnelCo
 
 // runTunnelServer contains the core logic for the pure Go udp2raw implementation for server mode.
 func (s *UdpTunnelService) runTunnelServer(ctx context.Context, cfg *model.UdpTunnelConfig) error {
-	log.Printf("Starting UDP tunnel server %s (Mode: %s, Listen Port: %d, Remote Address: %s)", cfg.Name, cfg.Mode, cfg.ListenPort, cfg.RemoteAddress)
+	log.Printf("Starting UDP tunnel server %s (Mode: %s, Listen Port: %d, Remote Address: %s)", cfg.Name, cfg.ListenPort, cfg.RemoteAddress)
 
-	if cfg.Mode != "faketcp" {
+	var proto int
+	switch cfg.Mode {
+	case "faketcp":
+		proto = syscall.IPPROTO_TCP
+	case "icmp":
+		proto = syscall.IPPROTO_ICMP
+	case "raw_udp":
+		proto = syscall.IPPROTO_UDP
+	default:
 		return fmt.Errorf("unsupported server tunnel mode: %s for config %s", cfg.Mode, cfg.Name)
 	}
 
 	// Create a raw socket to listen for incoming IP packets
-	// For faketcp, we are interested in TCP packets.
-	// IPPROTO_TCP will filter for TCP packets at the IP layer.
 	// This requires CAP_NET_RAW capability.
-	fd, err := syscall.Socket(syscall.AF_INET, syscall.SOCK_RAW, syscall.IPPROTO_TCP)
+	fd, err := syscall.Socket(syscall.AF_INET, syscall.SOCK_RAW, proto)
 	if err != nil {
 		return fmt.Errorf("failed to create raw socket for server (requires CAP_NET_RAW): %w", err)
 	}
@@ -218,46 +224,114 @@ func (s *UdpTunnelService) runTunnelServer(ctx context.Context, cfg *model.UdpTu
 			// Process the raw IP packet
 			packet := gopacket.NewPacket(packetBuffer[:n], layers.LayerTypeIPv4, gopacket.Default)
 			ipLayer := packet.Layer(layers.LayerTypeIPv4)
-			tcpLayer := packet.Layer(layers.LayerTypeTCP)
 
-			if ipLayer != nil && tcpLayer != nil {
-				ip := ipLayer.(*layers.IPv4)
-				tcp := tcpLayer.(*layers.TCP)
+			if ipLayer == nil {
+				log.Printf("SERVER %s: Could not decode IPv4 layer", cfg.Name)
+				continue
+			}
 
-				log.Printf("SERVER %s: Parsed TCP packet. DstIP: %s, DstPort: %d, Flags: SYN=%t, ACK=%t, PSH=%t, URG=%t, FIN=%t, RST=%t",
-					cfg.Name, ip.DstIP, tcp.DstPort, tcp.SYN, tcp.ACK, tcp.PSH, tcp.URG, tcp.FIN, tcp.RST)
+			ip := ipLayer.(*layers.IPv4)
+			var udpPayload []byte
 
-				// Filter packets by destination port (cfg.ListenPort)
-				// and check if it resembles a faketcp packet.
-				// For a simple faketcp server, we assume payload is UDP.
-				if uint16(tcp.DstPort) == uint16(cfg.ListenPort) {
-					if tcp.SYN && !tcp.ACK { // Client initiating handshake
-						log.Printf("Received SYN packet on Listen Port %d from %s:%d. Sending SYN-ACK...",
-							cfg.ListenPort, ip.SrcIP, tcp.SrcPort)
+			switch cfg.Mode {
+			case "faketcp":
+				tcpLayer := packet.Layer(layers.LayerTypeTCP)
+				if tcpLayer != nil {
+					tcp := tcpLayer.(*layers.TCP)
 
-						// Craft and send SYN-ACK
-						err := s.sendFakeTCPSynAck(fd, ip, tcp)
-						if err != nil {
-							log.Printf("Error sending SYN-ACK for server %s: %v", cfg.Name, err)
-						}
-					} else if tcp.ACK && len(tcp.Payload) > 0 { // Client has completed handshake and sending data
-						// Assume the payload is the encapsulated UDP data
-						udpPayload := tcp.Payload
+					log.Printf("SERVER %s: Parsed TCP packet. DstIP: %s, DstPort: %d, Flags: SYN=%t, ACK=%t, PSH=%t, URG=%t, FIN=%t, RST=%t, SrcIP: %s, SrcPort: %d",
+						cfg.Name, ip.DstIP, tcp.DstPort, tcp.SYN, tcp.ACK, tcp.PSH, tcp.URG, tcp.FIN, tcp.RST, ip.SrcIP, tcp.SrcPort)
 
-						// Forward the UDP payload to the remote UDP address
-						_, err := remoteUDPConn.Write(udpPayload)
-						if err != nil {
-							log.Printf("Error forwarding UDP payload for server %s: %v", cfg.Name, err)
+					// Filter packets by destination port (cfg.ListenPort)
+					// and check if it resembles a faketcp packet.
+					// For a simple faketcp server, we assume payload is UDP.
+					if uint16(tcp.DstPort) == uint16(cfg.ListenPort) {
+						if tcp.SYN && !tcp.ACK { // Client initiating handshake
+							log.Printf("Received SYN packet on Listen Port %d from %s:%d. Sending SYN-ACK...",
+								cfg.ListenPort, ip.SrcIP, tcp.SrcPort)
+
+							// Craft and send SYN-ACK
+							err := s.sendFakeTCPSynAck(fd, ip, tcp)
+							if err != nil {
+								log.Printf("Error sending SYN-ACK for server %s: %v", cfg.Name, err)
+							}
+						} else if tcp.ACK && len(tcp.Payload) > 0 { // Client has completed handshake and sending data
+							// Assume the payload is the encapsulated UDP data
+							udpPayload = tcp.Payload
+
+							// Forward the UDP payload to the remote UDP address
+							_, err := remoteUDPConn.Write(udpPayload)
+							if err != nil {
+								log.Printf("Error forwarding UDP payload for server %s: %v", cfg.Name, err)
+							} else {
+								log.Printf("Forwarded %d bytes of UDP payload for server %s to %s",
+									len(udpPayload), cfg.Name, cfg.RemoteAddress)
+								// TODO: Respond to the client with an ACK for the received data (optional for faketcp)
+							}
 						} else {
-							log.Printf("Forwarded %d bytes of UDP payload for server %s to %s",
+							log.Printf("Received unhandled TCP packet on Listen Port %d (Flags: SYN=%t, ACK=%t, PayloadLen=%d)",
+								cfg.ListenPort, tcp.SYN, tcp.ACK, len(tcp.Payload))
+						}
+					}
+				}
+			case "icmp":
+				icmpLayer := packet.Layer(layers.LayerTypeICMPv4)
+				if icmpLayer != nil {
+					icmp := icmpLayer.(*layers.ICMPv4)
+					log.Printf("SERVER %s: Parsed ICMP packet. TypeCode: %s, ID: %d, Seq: %d, SrcIP: %s",
+						cfg.Name, icmp.TypeCode, icmp.Id, icmp.Seq, ip.SrcIP)
+
+					// We expect ICMP Echo Request with UDP payload
+					if icmp.TypeCode.Type() == layers.ICMPv4TypeEchoRequest && len(icmp.Payload) > 0 {
+						udpPayload = icmp.Payload // Assume payload is encapsulated UDP
+
+						log.Printf("SERVER %s: Received ICMP Echo Request with %d bytes of payload from %s. Sending Echo Reply...",
+							cfg.Name, len(udpPayload), ip.SrcIP)
+
+						err := s.sendICMPEchoReply(fd, ip, icmp)
+						if err != nil {
+							log.Printf("Error sending ICMP Echo Reply for server %s: %v", cfg.Name, err)
+						}
+
+						// Forward the UDP payload
+						_, err = remoteUDPConn.Write(udpPayload)
+						if err != nil {
+							log.Printf("Error forwarding UDP payload (ICMP mode) for server %s: %v", cfg.Name, err)
+						} else {
+							log.Printf("Forwarded %d bytes of UDP payload (ICMP mode) for server %s to %s",
 								len(udpPayload), cfg.Name, cfg.RemoteAddress)
-							// TODO: Respond to the client with an ACK for the received data (optional for faketcp)
 						}
 					} else {
-						log.Printf("Received unhandled TCP packet on Listen Port %d (Flags: SYN=%t, ACK=%t, PayloadLen=%d)",
-							cfg.ListenPort, tcp.SYN, tcp.ACK, len(tcp.Payload))
+						log.Printf("SERVER %s: Received unhandled ICMP packet (TypeCode: %s, PayloadLen: %d)",
+							cfg.Name, icmp.TypeCode, len(icmp.Payload))
 					}
+				}
+			case "raw_udp":
+				udpLayer := packet.Layer(layers.LayerTypeUDP)
+				if udpLayer != nil {
+					udp := udpLayer.(*layers.UDP)
+					log.Printf("SERVER %s: Parsed UDP packet. SrcPort: %d, DstPort: %d, Len: %d, SrcIP: %s",
+						cfg.Name, udp.SrcPort, udp.DstPort, udp.Length, ip.SrcIP)
 
+					// Filter by ListenPort if needed, otherwise just forward
+					if uint16(udp.DstPort) == uint16(cfg.ListenPort) {
+						udpPayload = udp.Payload
+
+						log.Printf("SERVER %s: Received raw UDP packet with %d bytes of payload from %s:%d. Forwarding...",
+							cfg.Name, len(udpPayload), ip.SrcIP, udp.SrcPort)
+
+						// Forward the UDP payload
+						_, err := remoteUDPConn.Write(udpPayload)
+						if err != nil {
+							log.Printf("Error forwarding UDP payload (raw_udp mode) for server %s: %v", cfg.Name, err)
+						} else {
+							log.Printf("Forwarded %d bytes of UDP payload (raw_udp mode) for server %s to %s",
+								len(udpPayload), cfg.Name, cfg.RemoteAddress)
+						}
+					} else {
+						log.Printf("SERVER %s: Received raw UDP packet on unexpected port %d (expected %d)",
+							cfg.Name, udp.DstPort, cfg.ListenPort)
+					}
 				}
 			}
 		}
@@ -360,18 +434,145 @@ func (s *UdpTunnelService) sendFakeTCPSynAck(fd int, clientIP *layers.IPv4, clie
 	return syscall.Sendto(fd, buf.Bytes(), 0, &addr)
 }
 
-// sendICMPPacket is a placeholder for the ICMP mode implementation.
-func sendICMPPacket(fd int, destIP net.IP, payload []byte, tos int) error {
-	log.Printf("ICMP mode is not yet implemented.")
-	// TODO: Implement ICMP packet crafting and sending
-	return nil
+// sendICMPEchoReply crafts and sends an ICMP Echo Reply packet.
+func (s *UdpTunnelService) sendICMPEchoReply(fd int, clientIP *layers.IPv4, clientICMP *layers.ICMPv4) error {
+	// Source IP of the response should be the destination IP of the incoming packet
+	srcIP := clientIP.DstIP
+	// Destination IP of the response should be the source IP of the incoming packet
+	dstIP := clientIP.SrcIP
+
+	// Craft the packet layers for ICMP Echo Reply
+	ipLayer := &layers.IPv4{
+		Version:  4,
+		IHL:      5,
+		TOS:      clientIP.TOS, // Maintain same TOS
+		Length:   20 + 8 + uint16(len(clientICMP.Payload)), // IP header + ICMP header + payload
+		Id:       uint16(rand.Intn(65535)),
+		Flags:    layers.IPv4DontFragment,
+		TTL:      64,
+		Protocol: layers.IPProtocolICMPv4,
+		SrcIP:    srcIP,
+		DstIP:    dstIP,
+	}
+	icmpLayer := &layers.ICMPv4{
+		TypeCode: layers.CreateICMPv4TypeCode(layers.ICMPv4TypeEchoReply, 0),
+		Id:       clientICMP.Id,
+		Seq:      clientICMP.Seq,
+		// In gopacket v1.1.19, Payload is not a direct field of ICMPv4.
+		// It's part of the BaseLayer and passed separately for serialization.
+	}
+	// Per gopacket v1.1.19, the checksum is calculated by SerializeLayers when ComputeChecksums is true.
+	// icmpLayer.SetNetworkLayerForChecksum is not available in this version.
+
+	// Serialize the packet
+	buf := gopacket.NewSerializeBuffer()
+	opts := gopacket.SerializeOptions{
+		ComputeChecksums: true,
+		FixLengths:       true,
+	}
+	if err := gopacket.SerializeLayers(buf, opts, ipLayer, icmpLayer, gopacket.Payload(clientICMP.Payload)); err != nil {
+		return fmt.Errorf("failed to serialize ICMP Echo Reply packet: %w", err)
+	}
+
+	// Send the packet using the raw socket
+	addr := syscall.SockaddrInet4{
+		Port: 0, // Port is in the ICMP header
+	}
+	copy(addr.Addr[:], dstIP.To4())
+
+	return syscall.Sendto(fd, buf.Bytes(), 0, &addr)
 }
 
-// sendRawUDPPacket is a placeholder for the raw UDP mode implementation.
+// sendICMPPacket crafts and sends an ICMP Echo Request packet with the given payload.
+func sendICMPPacket(fd int, destIP net.IP, payload []byte, tos int) error {
+	// This is a simplified example. A real implementation needs to get the source IP properly.
+	srcIP := net.ParseIP("127.0.0.1") // Placeholder, should be the outbound IP
+
+	// Craft the packet layers
+	ipLayer := &layers.IPv4{
+		Version:  4,
+		IHL:      5,
+		TOS:      uint8(tos),
+		Length:   20 + 8 + uint16(len(payload)), // IP header + ICMP header + payload
+		Id:       uint16(rand.Intn(65535)),
+		Flags:    layers.IPv4DontFragment,
+		TTL:      64,
+		Protocol: layers.IPProtocolICMPv4,
+		SrcIP:    srcIP,
+		DstIP:    destIP,
+	}
+	icmpLayer := &layers.ICMPv4{
+		TypeCode: layers.CreateICMPv4TypeCode(layers.ICMPv4TypeEchoRequest, 0),
+		Id:       uint16(rand.Intn(65535)),
+		Seq:      uint16(rand.Intn(65535)),
+		// In gopacket v1.1.19, Payload is not a direct field of ICMPv4.
+		// It's part of the BaseLayer and passed separately for serialization.
+	}
+	// Per gopacket v1.1.19, the checksum is calculated by SerializeLayers when ComputeChecksums is true.
+	// icmpLayer.SetNetworkLayerForChecksum is not available in this version.
+
+	// Serialize the packet
+	buf := gopacket.NewSerializeBuffer()
+	opts := gopacket.SerializeOptions{
+		ComputeChecksums: true,
+		FixLengths:       true,
+	}
+	if err := gopacket.SerializeLayers(buf, opts, ipLayer, icmpLayer, gopacket.Payload(payload)); err != nil {
+		return fmt.Errorf("failed to serialize ICMP packet: %w", err)
+	}
+
+	// Send the packet
+	addr := syscall.SockaddrInet4{
+		Port: 0, // Port is in the ICMP header
+	}
+	copy(addr.Addr[:], destIP.To4())
+
+	return syscall.Sendto(fd, buf.Bytes(), 0, &addr)
+}
+
+// sendRawUDPPacket crafts and sends a raw UDP packet with the given payload.
 func sendRawUDPPacket(fd int, destIP net.IP, destPort uint16, payload []byte, tos int) error {
-	log.Printf("Raw UDP mode is not yet implemented.")
-	// TODO: Implement raw UDP packet crafting and sending
-	return nil
+	// This is a simplified example. A real implementation needs to get the source IP properly.
+	srcIP := net.ParseIP("127.0.0.1") // Placeholder, should be the outbound IP
+	srcPort := uint16(rand.Intn(65535-1024) + 1024) // Random source port
+
+	// Craft the packet layers
+	ipLayer := &layers.IPv4{
+		Version:  4,
+		IHL:      5,
+		TOS:      uint8(tos),
+		Length:   20 + 8 + uint16(len(payload)), // IP header + UDP header + payload
+		Id:       uint16(rand.Intn(65535)),
+		Flags:    layers.IPv4DontFragment,
+		TTL:      64,
+		Protocol: layers.IPProtocolUDP,
+		SrcIP:    srcIP,
+		DstIP:    destIP,
+	}
+	udpLayer := &layers.UDP{
+		SrcPort: layers.UDPPort(srcPort),
+		DstPort: layers.UDPPort(destPort),
+		Length:  uint16(8 + len(payload)), // UDP header length + payload length
+	}
+	udpLayer.SetNetworkLayerForChecksum(ipLayer)
+
+	// Serialize the packet
+	buf := gopacket.NewSerializeBuffer()
+	opts := gopacket.SerializeOptions{
+		ComputeChecksums: true,
+		FixLengths:       true,
+	}
+	if err := gopacket.SerializeLayers(buf, opts, ipLayer, udpLayer, gopacket.Payload(payload)); err != nil {
+		return fmt.Errorf("failed to serialize raw UDP packet: %w", err)
+	}
+
+	// Send the packet
+	addr := syscall.SockaddrInet4{
+		Port: 0, // Port is in the UDP header
+	}
+	copy(addr.Addr[:], destIP.To4())
+
+	return syscall.Sendto(fd, buf.Bytes(), 0, &addr)
 }
 
 func parseRemoteAddress(addr string) (net.IP, uint16, error) {
