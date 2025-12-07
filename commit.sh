@@ -1,7 +1,7 @@
 #!/bin/bash
 # Exit immediately if a command exits with a non-zero status.
 set -e
-
+#source ~/.bashrc
 PROJECT_DIR="/mnt/usb_hdd1/Projects/sing-chisel-tel"
 
 echo "INFO: This script assumes TF_VAR_github_user and TF_VAR_github_token are set in your environment."
