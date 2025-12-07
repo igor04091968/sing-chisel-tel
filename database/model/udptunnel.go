@@ -8,8 +8,9 @@ import (
 type UdpTunnelConfig struct {
 	gorm.Model
 	Name                string `json:"name" gorm:"uniqueIndex"`
-	ListenPort          int    `json:"listen_port"`
-	RemoteAddress       string `json:"remote_address"` // Format: host:port
+	Role                string `json:"role"`                   // "client" or "server"
+	ListenPort          int    `json:"listen_port"`            // For client: where local app sends UDP. For server: where udp2raw server listens.
+	RemoteAddress       string `json:"remote_address"`         // For client: where to send faketcp/udp2raw. For server: where to forward decoded UDP payload.
 	Mode                string `json:"mode"`           // e.g., "faketcp", "icmp", "raw_udp"
 	VLANID              uint16 `json:"vlan_id,omitempty"`       // 802.1Q VLAN ID
 	VLANPriority        uint8  `json:"vlan_priority,omitempty"` // 802.1p Priority Code Point (0-7)
@@ -19,4 +20,5 @@ type UdpTunnelConfig struct {
 	FakeTCPFlags        string `json:"fake_tcp_flags,omitempty"` // e.g., "SYN", "SYNACK"
 	Status              string `json:"status"`                   // "running", "stopped"
 	ProcessID           int    `json:"process_id,omitempty"`     // Placeholder for internal process management
+	// Additional fields for server-side. ServerListenAddress is not needed as RemoteAddress specifies the forward target.
 }

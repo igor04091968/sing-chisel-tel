@@ -53,7 +53,7 @@ func (s *UdpTunnelService) StartUdpTunnel(cfg *model.UdpTunnelConfig) error {
 	s.runningTunnels[cfg.ID] = instance
 	s.mu.Unlock()
 
-	log.Printf("Starting pure Go UDP tunnel %s (Mode: %s)", cfg.Name, cfg.Mode)
+	log.Printf("Starting pure Go UDP tunnel %s (Mode: %s, Role: %s)", cfg.Name, cfg.Mode, cfg.Role)
 
 	go func() {
 		err := s.runTunnel(ctx, cfg) // Corrected function name
@@ -83,8 +83,8 @@ func (s *UdpTunnelService) StartUdpTunnel(cfg *model.UdpTunnelConfig) error {
 	return s.db.Save(cfg).Error
 }
 
-// runTunnel contains the core logic for the pure Go udp2raw implementation.
-func (s *UdpTunnelService) runTunnel(ctx context.Context, cfg *model.UdpTunnelConfig) error {
+// runTunnelClient contains the core logic for the pure Go udp2raw implementation for client mode.
+func (s *UdpTunnelService) runTunnelClient(ctx context.Context, cfg *model.UdpTunnelConfig) error {
 	// 1. Listen for incoming UDP packets from the local application
 	localAddr, err := net.ResolveUDPAddr("udp", fmt.Sprintf("127.0.0.1:%d", cfg.ListenPort))
 	if err != nil {
@@ -148,6 +148,103 @@ func (s *UdpTunnelService) runTunnel(ctx context.Context, cfg *model.UdpTunnelCo
 
 			if err != nil {
 				log.Printf("Failed to send packet in mode %s: %v", cfg.Mode, err)
+			}
+		}
+	}
+}
+
+
+
+// runTunnel is a dispatcher for client and server tunnel modes.
+func (s *UdpTunnelService) runTunnel(ctx context.Context, cfg *model.UdpTunnelConfig) error {
+	switch cfg.Role {
+	case "client":
+		return s.runTunnelClient(ctx, cfg)
+	case "server":
+		return s.runTunnelServer(ctx, cfg)
+	default:
+		return fmt.Errorf("unsupported UDP tunnel role: %s", cfg.Role)
+	}
+}
+
+// runTunnelServer contains the core logic for the pure Go udp2raw implementation for server mode.
+func (s *UdpTunnelService) runTunnelServer(ctx context.Context, cfg *model.UdpTunnelConfig) error {
+	log.Printf("Starting UDP tunnel server %s (Mode: %s, Listen Port: %d, Remote Address: %s)", cfg.Name, cfg.Mode, cfg.ListenPort, cfg.RemoteAddress)
+
+	if cfg.Mode != "faketcp" {
+		return fmt.Errorf("unsupported server tunnel mode: %s for config %s", cfg.Mode, cfg.Name)
+	}
+
+	// Create a raw socket to listen for incoming IP packets
+	// For faketcp, we are interested in TCP packets.
+	// IPPROTO_TCP will filter for TCP packets at the IP layer.
+	// This requires CAP_NET_RAW capability.
+	fd, err := syscall.Socket(syscall.AF_INET, syscall.SOCK_RAW, syscall.IPPROTO_TCP)
+	if err != nil {
+		return fmt.Errorf("failed to create raw socket for server (requires CAP_NET_RAW): %w", err)
+	}
+	defer syscall.Close(fd)
+
+	// Use a buffer to read raw IP packets
+	packetBuffer := make([]byte, 65536) // Max IP packet size
+
+	// Create a UDP connection to the remote address for forwarding decoded packets
+	remoteUDPAddr, err := net.ResolveUDPAddr("udp", cfg.RemoteAddress)
+	if err != nil {
+		return fmt.Errorf("failed to resolve remote UDP address for forwarding: %w", err)
+	}
+	remoteUDPConn, err := net.DialUDP("udp", nil, remoteUDPAddr)
+	if err != nil {
+		return fmt.Errorf("failed to dial remote UDP address for forwarding: %w", err)
+	}
+	defer remoteUDPConn.Close()
+
+	for {
+		select {
+		case <-ctx.Done():
+			log.Printf("UDP tunnel server %s stopped.", cfg.Name)
+			return nil
+		default:
+			// Read raw IP packets
+			n, _, err := syscall.Recvfrom(fd, packetBuffer, 0)
+			if err != nil {
+				// Log and continue, as some errors are transient
+				log.Printf("Error reading from raw socket for server %s: %v", cfg.Name, err)
+				continue
+			}
+
+			// Process the raw IP packet
+			packet := gopacket.NewPacket(packetBuffer[:n], layers.LayerTypeIPv4, gopacket.Default)
+			ipLayer := packet.Layer(layers.LayerTypeIPv4)
+			tcpLayer := packet.Layer(layers.LayerTypeTCP)
+
+			if ipLayer != nil && tcpLayer != nil {
+				ip := ipLayer.(*layers.IPv4)
+				tcp := tcpLayer.(*layers.TCP)
+
+				// Filter packets by destination port (cfg.ListenPort)
+				// and check if it resembles a faketcp packet.
+				// For a simple faketcp server, we assume payload is UDP.
+				if uint16(tcp.DstPort) == uint16(cfg.ListenPort) {
+					// Minimal faketcp check: SYN flag should be present
+					// and there should be a payload.
+					if tcp.SYN && len(tcp.Payload) > 0 {
+						// Assume the payload is the encapsulated UDP data
+						udpPayload := tcp.Payload
+
+						// Forward the UDP payload to the remote UDP address
+						_, err := remoteUDPConn.Write(udpPayload)
+						if err != nil {
+							log.Printf("Error forwarding UDP payload for server %s: %v", cfg.Name, err)
+						} else {
+							log.Printf("Forwarded %d bytes of UDP payload for server %s to %s",
+								len(udpPayload), cfg.Name, cfg.RemoteAddress)
+						}
+					} else {
+						log.Printf("Received non-faketcp TCP packet on Listen Port %d (Src: %s:%d, Dst: %s:%d)",
+							cfg.ListenPort, ip.SrcIP, tcp.SrcPort, ip.DstIP, tcp.DstPort)
+					}
+				}
 			}
 		}
 	}
