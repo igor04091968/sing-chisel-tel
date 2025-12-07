@@ -15,15 +15,18 @@ fi
 echo "Changing to project directory: $PROJECT_DIR"
 cd "$PROJECT_DIR"
 
+echo "--> Stopping and removing existing container (if any)..."
+docker stop sing-chisel-tel-container || true
+docker rm sing-chisel-tel-container || true
+
+echo "--> Tainting the Docker image to force a rebuild..."
+terraform taint docker_image.sing_chisel_tel_image || true
+
 echo "--> Running terraform init..."
 terraform init -reconfigure
 
 echo "--> Running terraform plan..."
 terraform plan -out=tfplan
-
-echo "--> Stopping and removing existing container (if any)..."
-docker stop sing-chisel-tel-container || true
-docker rm sing-chisel-tel-container || true
 
 echo "--> Running terraform apply..."
 terraform apply -auto-approve tfplan
@@ -36,7 +39,7 @@ echo "--> Committing changes..."
 git commit -m "Automated commit via commit.sh" || true
 
 echo "--> Pushing changes to GitHub..."
-git push "https://:@github.com/igor04091968/sing-chisel-tel.git" main
+# The variables are expanded here, when the script is run
+git push "https://${TF_VAR_github_user}:${TF_VAR_github_token}@github.com/igor04091968/sing-chisel-tel.git" main
 
 echo "Automation script finished successfully!"
-
