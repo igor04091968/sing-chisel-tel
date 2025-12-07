@@ -226,9 +226,16 @@ func (s *UdpTunnelService) runTunnelServer(ctx context.Context, cfg *model.UdpTu
 				// and check if it resembles a faketcp packet.
 				// For a simple faketcp server, we assume payload is UDP.
 				if uint16(tcp.DstPort) == uint16(cfg.ListenPort) {
-					// Minimal faketcp check: SYN flag should be present
-					// and there should be a payload.
-					if tcp.SYN && len(tcp.Payload) > 0 {
+					if tcp.SYN && !tcp.ACK { // Client initiating handshake
+						log.Printf("Received SYN packet on Listen Port %d from %s:%d. Sending SYN-ACK...",
+							cfg.ListenPort, ip.SrcIP, tcp.SrcPort)
+
+						// Craft and send SYN-ACK
+						err := s.sendFakeTCPSynAck(fd, ip, tcp)
+						if err != nil {
+							log.Printf("Error sending SYN-ACK for server %s: %v", cfg.Name, err)
+						}
+					} else if tcp.ACK && len(tcp.Payload) > 0 { // Client has completed handshake and sending data
 						// Assume the payload is the encapsulated UDP data
 						udpPayload := tcp.Payload
 
@@ -239,11 +246,13 @@ func (s *UdpTunnelService) runTunnelServer(ctx context.Context, cfg *model.UdpTu
 						} else {
 							log.Printf("Forwarded %d bytes of UDP payload for server %s to %s",
 								len(udpPayload), cfg.Name, cfg.RemoteAddress)
+							// TODO: Respond to the client with an ACK for the received data (optional for faketcp)
 						}
 					} else {
-						log.Printf("Received non-faketcp TCP packet on Listen Port %d (Src: %s:%d, Dst: %s:%d)",
-							cfg.ListenPort, ip.SrcIP, tcp.SrcPort, ip.DstIP, tcp.DstPort)
+						log.Printf("Received unhandled TCP packet on Listen Port %d (Flags: SYN=%t, ACK=%t, PayloadLen=%d)",
+							cfg.ListenPort, tcp.SYN, tcp.ACK, len(tcp.Payload))
 					}
+
 				}
 			}
 		}
@@ -292,6 +301,56 @@ func sendFakeTCPPacket(fd int, destIP net.IP, destPort uint16, payload []byte, t
 		Port: 0, // Port is in the TCP header
 	}
 	copy(addr.Addr[:], destIP.To4())
+
+	return syscall.Sendto(fd, buf.Bytes(), 0, &addr)
+}
+
+// sendFakeTCPSynAck crafts and sends a SYN-ACK TCP packet in response to a received SYN.
+func (s *UdpTunnelService) sendFakeTCPSynAck(fd int, clientIP *layers.IPv4, clientTCP *layers.TCP) error {
+	// Source IP of the response should be the destination IP of the incoming packet
+	srcIP := clientIP.DstIP
+	// Destination IP of the response should be the source IP of the incoming packet
+	dstIP := clientIP.SrcIP
+
+	// Craft the packet layers for SYN-ACK
+	ipLayer := &layers.IPv4{
+		Version:  4,
+		IHL:      5,
+		TOS:      clientIP.TOS, // Maintain same TOS
+		Length:   20 + 20,      // IP header + TCP header (no payload for SYN-ACK)
+		Id:       uint16(rand.Intn(65535)),
+		Flags:    layers.IPv4DontFragment,
+		TTL:      64,
+		Protocol: layers.IPProtocolTCP,
+		SrcIP:    srcIP,
+		DstIP:    dstIP,
+	}
+	tcpLayer := &layers.TCP{
+		SrcPort: clientTCP.DstPort, // Server's listen port
+		DstPort: clientTCP.SrcPort, // Client's source port
+		ACK:     true,
+		SYN:     true,
+		Window:  14600,
+		Seq:     rand.Uint32(),                      // Server's initial sequence number
+		Ack:     clientTCP.Seq + 1,                  // Acknowledge client's sequence number
+	}
+	tcpLayer.SetNetworkLayerForChecksum(ipLayer)
+
+	// Serialize the packet
+	buf := gopacket.NewSerializeBuffer()
+	opts := gopacket.SerializeOptions{
+		ComputeChecksums: true,
+		FixLengths:       true,
+	}
+	if err := gopacket.SerializeLayers(buf, opts, ipLayer, tcpLayer); err != nil {
+		return fmt.Errorf("failed to serialize SYN-ACK packet: %w", err)
+	}
+
+	// Send the packet using the raw socket
+	addr := syscall.SockaddrInet4{
+		Port: 0, // Port is in the TCP header
+	}
+	copy(addr.Addr[:], dstIP.To4())
 
 	return syscall.Sendto(fd, buf.Bytes(), 0, &addr)
 }
