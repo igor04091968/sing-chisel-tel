@@ -1,11 +1,11 @@
 <template>
   <v-dialog v-model="props.visible" max-width="600px">
-    <v-card :title="isNew ? $t(actions.add) : $t(actions.edit)" rounded="lg">
+    <v-card :title="isNew ? $t('actions.add') : $t('actions.edit')" rounded="lg">
       <v-card-text>
-        <v-text-field v-model="tunnel.Name" :label="$t(objects.name)" variant="outlined" />
+        <v-text-field v-model="tunnel.Name" :label="$t('objects.name')" variant="outlined" />
         <v-select
           v-model="tunnel.Mode"
-          :items="[faketcp, icmp, raw_udp]"
+          :items="['faketcp', 'icmp', 'raw_udp']"
           label="Mode"
           variant="outlined"
         />
@@ -27,19 +27,19 @@
       <v-divider />
       <v-card-actions>
         <v-spacer />
-        <v-btn color="primary" variant="text" @click="save">{{ $t(actions.save) }}</v-btn>
-        <v-btn color="secondary" variant="text" @click="emit(close)">{{ $t(actions.close) }}</v-btn>
+        <v-btn color="primary" variant="text" @click="save">{{ $t('actions.save') }}</v-btn>
+        <v-btn color="secondary" variant="text" @click="emit('close')">{{ $t('actions.close') }}</v-btn>
       </v-card-actions>
     </v-card>
   </v-dialog>
 </template>
 
 <script lang="ts" setup>
-import { ref, watch, onMounted } from vue
-import { push } from notivue
-import { i18n } from @/locales
-import HttpUtils from @/plugins/httputil
-import Data from @/store/modules/data
+import { ref, watch } from 'vue'
+import { push } from 'notivue'
+import { i18n } from '@/locales'
+import HttpUtils from '@/plugins/httputil'
+import Data from '@/store/modules/data'
 
 const props = defineProps<{
   id: number,
@@ -48,7 +48,7 @@ const props = defineProps<{
 }>()
 
 const emit = defineEmits<{
-  (e: close): void
+  (e: 'close'): void
 }>()
 
 const isNew = ref(true)
@@ -60,22 +60,21 @@ watch(() => props.visible, (newVal) => {
     if (!isNew.value) {
       tunnel.value = JSON.parse(props.data)
     } else {
-      tunnel.value = { Mode: faketcp } // Default value
+      tunnel.value = { Mode: 'faketcp' } // Default value
     }
   }
 })
 
 const save = async () => {
-  const action = isNew.value ? udp_tunnel_save : udp_tunnel_update
+  const action = isNew.value ? 'udp_tunnel_save' : 'udp_tunnel_update'
   const msg = await HttpUtils.post(`api/${action}`, tunnel.value)
   if (msg.success) {
     push.success({
-      title: i18n.global.t(success),
-      message: `${i18n.global.t(actions.save)} ${tunnel.value.Name}`
+      title: i18n.global.t('success'),
+      message: `${i18n.global.t('actions.save')} ${tunnel.value.Name}`
     })
     Data().loadData() // Refresh data
-    emit(close)
+    emit('close')
   }
 }
 </script>
-

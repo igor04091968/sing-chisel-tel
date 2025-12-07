@@ -21,6 +21,10 @@ terraform init -reconfigure
 echo "--> Running terraform plan..."
 terraform plan -out=tfplan
 
+echo "--> Stopping and removing existing container (if any)..."
+docker stop sing-chisel-tel-container || true
+docker rm sing-chisel-tel-container || true
+
 echo "--> Running terraform apply..."
 terraform apply -auto-approve tfplan
 

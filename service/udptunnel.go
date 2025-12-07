@@ -213,8 +213,7 @@ func sendRawUDPPacket(fd int, destIP net.IP, destPort uint16, payload []byte, to
 	return nil
 }
 
-func parseRemoteAddress(addr string) (net.I
-P, uint16, error) {
+func parseRemoteAddress(addr string) (net.IP, uint16, error) {
 	host, portStr, err := net.SplitHostPort(addr)
 	if err != nil {
 		return nil, 0, fmt.Errorf("invalid remote address format: %w", err)
