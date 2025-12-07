@@ -74,82 +74,82 @@ func (a *ApiService) getData(c *gin.Context) (interface{}, error) {
 	if isUpdated {
 		log.Println("DEBUG: Data is updated, fetching all configs...")
 
-		log.Println("DEBUG: Fetching config...")
-		config, err := a.SettingService.GetConfig()
-		if err != nil {
-			log.Printf("DEBUG: Error fetching config: %v", err)
-			return "", err
-		}
+		// log.Println("DEBUG: Fetching config...")
+		// config, err := a.SettingService.GetConfig()
+		// if err != nil {
+		// 	log.Printf("DEBUG: Error fetching config: %v", err)
+		// 	return "", err
+		// }
 
-		log.Println("DEBUG: Fetching clients...")
-		clients, err := a.ClientService.GetAllUsers()
-		if err != nil {
-			log.Printf("DEBUG: Error fetching clients: %v", err)
-			return "", err
-		}
+		// log.Println("DEBUG: Fetching clients...")
+		// clients, err := a.ClientService.GetAllUsers()
+		// if err != nil {
+		// 	log.Printf("DEBUG: Error fetching clients: %v", err)
+		// 	return "", err
+		// }
 
-		log.Println("DEBUG: Fetching tlsConfigs...")
-		tlsConfigs, err := a.TlsService.GetAll()
-		if err != nil {
-			log.Printf("DEBUG: Error fetching tlsConfigs: %v", err)
-			return "", err
-		}
+		// log.Println("DEBUG: Fetching tlsConfigs...")
+		// tlsConfigs, err := a.TlsService.GetAll()
+		// if err != nil {
+		// 	log.Printf("DEBUG: Error fetching tlsConfigs: %v", err)
+		// 	return "", err
+		// }
 
-		log.Println("DEBUG: Fetching inbounds...")
-		inbounds, err := a.InboundService.GetAll()
-		if err != nil {
-			log.Printf("DEBUG: Error fetching inbounds: %v", err)
-			return "", err
-		}
+		// log.Println("DEBUG: Fetching inbounds...")
+		// inbounds, err := a.InboundService.GetAll()
+		// if err != nil {
+		// 	log.Printf("DEBUG: Error fetching inbounds: %v", err)
+		// 	return "", err
+		// }
 
-		log.Println("DEBUG: Fetching outbounds...")
-		outbounds, err := a.OutboundService.GetAll()
-		if err != nil {
-			log.Printf("DEBUG: Error fetching outbounds: %v", err)
-			return "", err
-		}
+		// log.Println("DEBUG: Fetching outbounds...")
+		// outbounds, err := a.OutboundService.GetAll()
+		// if err != nil {
+		// 	log.Printf("DEBUG: Error fetching outbounds: %v", err)
+		// 	return "", err
+		// }
 
-		log.Println("DEBUG: Fetching endpoints...")
-		endpoints, err := a.EndpointService.GetAll()
-		if err != nil {
-			log.Printf("DEBUG: Error fetching endpoints: %v", err)
-			return "", err
-		}
+		// log.Println("DEBUG: Fetching endpoints...")
+		// endpoints, err := a.EndpointService.GetAll()
+		// if err != nil {
+		// 	log.Printf("DEBUG: Error fetching endpoints: %v", err)
+		// 	return "", err
+		// }
 
-		log.Println("DEBUG: Fetching services...")
-		services, err := a.ServicesService.GetAll()
-		if err != nil {
-			log.Printf("DEBUG: Error fetching services: %v", err)
-			return "", err
-		}
+		// log.Println("DEBUG: Fetching services...")
+		// services, err := a.ServicesService.GetAll()
+		// if err != nil {
+		// 	log.Printf("DEBUG: Error fetching services: %v", err)
+		// 	return "", err
+		// }
 
-		log.Println("DEBUG: Fetching chiselConfigs...")
-		chiselConfigs, err := a.ChiselService.GetAllChiselConfigs()
-		if err != nil {
-			log.Printf("DEBUG: Error fetching chiselConfigs: %v", err)
-			return "", err
-		}
+		// log.Println("DEBUG: Fetching chiselConfigs...")
+		// chiselConfigs, err := a.ChiselService.GetAllChiselConfigs()
+		// if err != nil {
+		// 	log.Printf("DEBUG: Error fetching chiselConfigs: %v", err)
+		// 	return "", err
+		// }
 
-		log.Println("DEBUG: Fetching mtprotoConfigs...")
-		mtprotoConfigs, err := a.MTProtoService.GetAllMTProtoProxies()
-		if err != nil {
-			log.Printf("DEBUG: Error fetching mtprotoConfigs: %v", err)
-			return "", err
-		}
+		// log.Println("DEBUG: Fetching mtprotoConfigs...")
+		// mtprotoConfigs, err := a.MTProtoService.GetAllMTProtoProxies()
+		// if err != nil {
+		// 	log.Printf("DEBUG: Error fetching mtprotoConfigs: %v", err)
+		// 	return "", err
+		// }
 
-		log.Println("DEBUG: Fetching greConfigs...")
-		greConfigs, err := a.GreService.GetAllGreTunnels()
-		if err != nil {
-			log.Printf("DEBUG: Error fetching greConfigs: %v", err)
-			return "", err
-		}
+		// log.Println("DEBUG: Fetching greConfigs...")
+		// greConfigs, err := a.GreService.GetAllGreTunnels()
+		// if err != nil {
+		// 	log.Printf("DEBUG: Error fetching greConfigs: %v", err)
+		// 	return "", err
+		// }
 
-		log.Println("DEBUG: Fetching tapConfigs...")
-		tapConfigs, err := a.TapService.GetAllTapTunnels()
-		if err != nil {
-			log.Printf("DEBUG: Error fetching tapConfigs: %v", err)
-			return "", err
-		}
+		// log.Println("DEBUG: Fetching tapConfigs...")
+		// tapConfigs, err := a.TapService.GetAllTapTunnels()
+		// if err != nil {
+		// 	log.Printf("DEBUG: Error fetching tapConfigs: %v", err)
+		// 	return "", err
+		// }
 
 		log.Println("DEBUG: Fetching udpTunnelConfigs...")
 		udpTunnelConfigs, err := a.UdpTunnelService.GetAllUdpTunnels()
@@ -158,35 +158,35 @@ func (a *ApiService) getData(c *gin.Context) (interface{}, error) {
 			return "", err
 		}
 
-		log.Println("DEBUG: Fetching subURI...")
-		subURI, err := a.SettingService.GetFinalSubURI(getHostname(c))
-		if err != nil {
-			log.Printf("DEBUG: Error fetching subURI: %v", err)
-			return "", err
-		}
+		// log.Println("DEBUG: Fetching subURI...")
+		// subURI, err := a.SettingService.GetFinalSubURI(getHostname(c))
+		// if err != nil {
+		// 	log.Printf("DEBUG: Error fetching subURI: %v", err)
+		// 	return "", err
+		// }
 
-		log.Println("DEBUG: Fetching trafficAge...")
-		trafficAge, err := a.SettingService.GetTrafficAge()
-		if err != nil {
-			log.Printf("DEBUG: Error fetching trafficAge: %v", err)
-			return "", err
-		}
+		// log.Println("DEBUG: Fetching trafficAge...")
+		// trafficAge, err := a.SettingService.GetTrafficAge()
+		// if err != nil {
+		// 	log.Printf("DEBUG: Error fetching trafficAge: %v", err)
+		// 	return "", err
+		// }
 
 		log.Println("DEBUG: Assembling data map...")
-		data["config"] = json.RawMessage(config)
-		data["clients"] = clients
-		data["tls"] = tlsConfigs
-		data["inbounds"] = inbounds
-		data["outbounds"] = outbounds
-		data["endpoints"] = endpoints
-		data["services"] = services
-		data["chisel"] = chiselConfigs
-		data["mtproto"] = mtprotoConfigs
-		data["gre"] = greConfigs
-		data["tap"] = tapConfigs
+		// data["config"] = json.RawMessage(config)
+		// data["clients"] = clients
+		// data["tls"] = tlsConfigs
+		// data["inbounds"] = inbounds
+		// data["outbounds"] = outbounds
+		// data["endpoints"] = endpoints
+		// data["services"] = services
+		// data["chisel"] = chiselConfigs
+		// data["mtproto"] = mtprotoConfigs
+		// data["gre"] = greConfigs
+		// data["tap"] = tapConfigs
 		data["udptunnels"] = udpTunnelConfigs
-		data["subURI"] = subURI
-		data["enableTraffic"] = trafficAge > 0
+		// data["subURI"] = subURI
+		// data["enableTraffic"] = trafficAge > 0
 		data["onlines"] = onlines
 	} else {
 		data["onlines"] = onlines
