@@ -1,6 +1,7 @@
 #!/bin/bash
 # Exit immediately if a command exits with a non-zero status.
 set -e
+dt=`date`
 #source ~/.bashrc
 PROJECT_DIR="/mnt/usb_hdd1/Projects/sing-chisel-tel"
 
@@ -36,7 +37,8 @@ terraform apply -auto-approve tfplan
 
 #echo "--> Committing changes..."
 # We use || true in case there are no changes to commit
-#############################################################git commit -m "Automated commit via commit.sh" || true
+################
+#############################################git commit -m "Automated commit via commit.sh" || true
 
 #echo "--> Pushing changes to GitHub..."
 # The variables are expanded here, when the script is run
