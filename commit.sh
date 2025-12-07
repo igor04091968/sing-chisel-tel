@@ -31,15 +31,15 @@ terraform plan -out=tfplan
 echo "--> Running terraform apply..."
 terraform apply -auto-approve tfplan
 
-echo "--> Adding changes to git..."
-git add .
+#echo "--> Adding changes to git..."
+#############################################################git add .
 
-echo "--> Committing changes..."
+#echo "--> Committing changes..."
 # We use || true in case there are no changes to commit
-git commit -m "Automated commit via commit.sh" || true
+#############################################################git commit -m "Automated commit via commit.sh" || true
 
-echo "--> Pushing changes to GitHub..."
+#echo "--> Pushing changes to GitHub..."
 # The variables are expanded here, when the script is run
-git push "https://${TF_VAR_github_user}:${TF_VAR_github_token}@github.com/igor04091968/sing-chisel-tel.git" main
+###########################################################git push "https://${TF_VAR_github_user}:${TF_VAR_github_token}@github.com/igor04091968/sing-chisel-tel.git" main
 
 echo "Automation script finished successfully!"
