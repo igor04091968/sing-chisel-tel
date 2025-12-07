@@ -36,7 +36,7 @@ echo "--> Committing changes..."
 git commit -m "Automated commit via commit.sh" || true
 
 echo "--> Pushing changes to GitHub..."
-git push origin main
+git push "https://:@github.com/igor04091968/sing-chisel-tel.git" main
 
 echo "Automation script finished successfully!"
 
