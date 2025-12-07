@@ -6,9 +6,9 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/alireza0/s-ui/config"
-	"github.com/alireza0/s-ui/database"
-	"github.com/alireza0/s-ui/service"
+	"github.com/igor04091968/sing-chisel-tel/config"
+	"github.com/igor04091968/sing-chisel-tel/database"
+	"github.com/igor04091968/sing-chisel-tel/service"
 
 	"github.com/shirou/gopsutil/v4/net"
 )

@@ -1,8 +1,8 @@
 package core
 
 import (
-	"github.com/alireza0/s-ui/logger"
-	"github.com/alireza0/s-ui/util/common"
+	"github.com/igor04091968/sing-chisel-tel/logger"
+	"github.com/igor04091968/sing-chisel-tel/util/common"
 
 	"github.com/sagernet/sing-box/adapter"
 	"github.com/sagernet/sing-box/option"

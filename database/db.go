@@ -5,8 +5,8 @@ import (
 	"os"
 	"path"
 
-	"github.com/alireza0/s-ui/config"
-	"github.com/alireza0/s-ui/database/model"
+	"github.com/igor04091968/sing-chisel-tel/config"
+	"github.com/igor04091968/sing-chisel-tel/database/model"
 
 	sqlitegorm "github.com/glebarez/sqlite"
 	"gorm.io/gorm"

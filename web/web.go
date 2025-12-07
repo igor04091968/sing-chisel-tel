@@ -12,12 +12,12 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/alireza0/s-ui/api"
-	"github.com/alireza0/s-ui/config"
-	"github.com/alireza0/s-ui/logger"
-	"github.com/alireza0/s-ui/middleware"
-	"github.com/alireza0/s-ui/network"
-	"github.com/alireza0/s-ui/service"
+	"github.com/igor04091968/sing-chisel-tel/api"
+	"github.com/igor04091968/sing-chisel-tel/config"
+	"github.com/igor04091968/sing-chisel-tel/logger"
+	"github.com/igor04091968/sing-chisel-tel/middleware"
+	"github.com/igor04091968/sing-chisel-tel/network"
+	"github.com/igor04091968/sing-chisel-tel/service"
 
 	"github.com/gin-contrib/gzip"
 	"github.com/gin-contrib/sessions"

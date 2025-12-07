@@ -6,11 +6,11 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/alireza0/s-ui/database"
-	"github.com/alireza0/s-ui/database/model"
-	"github.com/alireza0/s-ui/logger"
-	"github.com/alireza0/s-ui/service"
-	"github.com/alireza0/s-ui/util"
+	"github.com/igor04091968/sing-chisel-tel/database"
+	"github.com/igor04091968/sing-chisel-tel/database/model"
+	"github.com/igor04091968/sing-chisel-tel/logger"
+	"github.com/igor04091968/sing-chisel-tel/service"
+	"github.com/igor04091968/sing-chisel-tel/util"
 
 	"github.com/gin-gonic/gin"
 )
@@ -33,7 +33,7 @@ type ApiService struct {
 	service.MTProtoService
 	service.GreService
 	service.TapService
-	*service.UdpTunnelService
+	service.UdpTunnelService
 }
 
 func (a *ApiService) LoadData(c *gin.Context) {
@@ -152,9 +152,6 @@ func (a *ApiService) getData(c *gin.Context) (interface{}, error) {
 		}
 
 		log.Println("DEBUG: Fetching udpTunnelConfigs...")
-		if a.UdpTunnelService == nil {
-			log.Println("DEBUG: UdpTunnelService is nil!")
-		}
 		udpTunnelConfigs, err := a.UdpTunnelService.GetAllUdpTunnels()
 		if err != nil {
 			log.Printf("DEBUG: Error fetching udpTunnelConfigs: %v", err)

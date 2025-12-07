@@ -10,8 +10,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/alireza0/s-ui/database"
-	"github.com/alireza0/s-ui/database/model"
+	"github.com/igor04091968/sing-chisel-tel/database"
+	"github.com/igor04091968/sing-chisel-tel/database/model"
 	chclient "github.com/jpillora/chisel/client"
 	chserver "github.com/jpillora/chisel/server"
 )

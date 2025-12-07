@@ -6,10 +6,10 @@ import (
 	"os"
 	"strings"
 
-	"github.com/alireza0/s-ui/database"
-	"github.com/alireza0/s-ui/database/model"
-	"github.com/alireza0/s-ui/util"
-	"github.com/alireza0/s-ui/util/common"
+	"github.com/igor04091968/sing-chisel-tel/database"
+	"github.com/igor04091968/sing-chisel-tel/database/model"
+	"github.com/igor04091968/sing-chisel-tel/util"
+	"github.com/igor04091968/sing-chisel-tel/util/common"
 
 	"gorm.io/gorm"
 )

@@ -5,8 +5,8 @@ import (
 	"log"
 	// "net" // Removed unused import
 
-	"github.com/alireza0/s-ui/database"
-	"github.com/alireza0/s-ui/database/model"
+	"github.com/igor04091968/sing-chisel-tel/database"
+	"github.com/igor04091968/sing-chisel-tel/database/model"
 	"github.com/songgao/water"
 	"github.com/vishvananda/netlink"
 	"gorm.io/gorm"

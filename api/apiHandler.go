@@ -4,9 +4,9 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/alireza0/s-ui/database/model"
-	"github.com/alireza0/s-ui/service"
-	"github.com/alireza0/s-ui/util/common"
+	"github.com/igor04091968/sing-chisel-tel/database/model"
+	"github.com/igor04091968/sing-chisel-tel/service"
+	"github.com/igor04091968/sing-chisel-tel/util/common"
 
 	"github.com/gin-gonic/gin"
 )
@@ -45,7 +45,7 @@ func NewAPIHandler(g *gin.RouterGroup, a2 *APIv2Handler, bundle *service.Service
 			a.ApiService.GostService = *bundle.GostService
 		}
 		if bundle.UdpTunnelService != nil {
-			a.ApiService.UdpTunnelService = bundle.UdpTunnelService
+			a.ApiService.UdpTunnelService = *bundle.UdpTunnelService
 		}
 	}
 

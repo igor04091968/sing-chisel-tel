@@ -3,7 +3,7 @@ package core
 import (
 	"context"
 
-	"github.com/alireza0/s-ui/logger"
+	"github.com/igor04091968/sing-chisel-tel/logger"
 
 	sb "github.com/sagernet/sing-box"
 	"github.com/sagernet/sing-box/adapter"

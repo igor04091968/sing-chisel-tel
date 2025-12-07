@@ -9,8 +9,8 @@ import (
 	"sync"
 	"syscall"
 
-	"github.com/alireza0/s-ui/database"
-	"github.com/alireza0/s-ui/database/model"
+	"github.com/igor04091968/sing-chisel-tel/database"
+	"github.com/igor04091968/sing-chisel-tel/database/model"
 	"github.com/google/gopacket"
 	"github.com/google/gopacket/layers"
 	"gorm.io/gorm"

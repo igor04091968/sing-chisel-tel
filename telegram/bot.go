@@ -7,9 +7,9 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/alireza0/s-ui/core"
-	"github.com/alireza0/s-ui/database/model"
-	"github.com/alireza0/s-ui/service"
+	"github.com/igor04091968/sing-chisel-tel/core"
+	"github.com/igor04091968/sing-chisel-tel/database/model"
+	"github.com/igor04091968/sing-chisel-tel/service"
 	"gopkg.in/telebot.v3"
 )
 

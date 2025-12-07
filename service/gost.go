@@ -12,8 +12,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/alireza0/s-ui/database"
-	"github.com/alireza0/s-ui/database/model"
+	"github.com/igor04091968/sing-chisel-tel/database"
+	"github.com/igor04091968/sing-chisel-tel/database/model"
 )
 
 // GostService provides embedded reverse tunnel functionality (no external binaries needed).
