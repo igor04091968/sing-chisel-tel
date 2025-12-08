@@ -1,0 +1,33 @@
+# .semaphore/apply.yml
+# This pipeline applies the Terraform plan.
+
+version: v1.0
+name: Terraform Apply
+
+agent:
+  machine:
+    type: e1-standard-2
+    os_image: ubuntu2004
+
+blocks:
+  - name: "Terraform Apply"
+    task:
+      secrets:
+        # This secret should contain your Google Cloud credentials.
+        # You need to create this secret in the Semaphore UI.
+        - name: gcp-credentials
+      prologue:
+        commands:
+          - checkout
+          # Authenticate with Google Cloud.
+          - gcloud auth activate-service-account --key-file=/home/semaphore/.secrets/gcp-key.json
+          # Download the plan from the previous pipeline's artifacts.
+          - artifact pull workflow tfplan
+
+      jobs:
+        - name: "terraform apply"
+          commands:
+            # Initialize Terraform before applying.
+            - terraform init
+            # Apply the Terraform plan.
+            - terraform apply -auto-approve tfplan

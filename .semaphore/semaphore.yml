@@ -1,0 +1,65 @@
+# .semaphore/semaphore.yml
+# This is a basic Semaphore CI/CD pipeline for Terraform.
+
+# The version of the Semaphore pipeline syntax.
+version: v1.0
+
+# The name of the pipeline.
+name: Terraform Deployment
+
+# The agent block specifies the environment in which the pipeline will run.
+agent:
+  # Use a standard machine type.
+  machine:
+    type: e1-standard-2
+    # Use a standard Ubuntu image.
+    os_image: ubuntu2004
+
+# A block is a sequence of jobs that run in parallel.
+blocks:
+  - name: "Terraform Plan"
+    # A task is a sequence of commands that run in a single job.
+    task:
+      # Define environment variables if needed.
+      # env_vars:
+      #   - name: TF_VAR_project_id
+      #     value: "your-gcp-project-id"
+
+      # The secrets block defines which secrets to expose to the job.
+      secrets:
+        # This secret should contain your Google Cloud credentials.
+        # You need to create this secret in the Semaphore UI.
+        - name: gcp-credentials
+
+      prologue:
+        # The prologue runs before the main commands.
+        # Here, we check out the code and authenticate with Google Cloud.
+        commands:
+          - checkout
+          # The gcp-credentials secret should contain a file with your GCP service account key.
+          # The following command authenticates with gcloud CLI.
+          # Make sure the file name in the secret matches 'gcp-key.json'.
+          - gcloud auth activate-service-account --key-file=/home/semaphore/.secrets/gcp-key.json
+
+      jobs:
+        - name: "terraform init & plan"
+          commands:
+            # Initialize Terraform.
+            - terraform init
+            # Generate a Terraform plan.
+            - terraform plan -out=tfplan
+
+      # The epilogue runs after the main commands, regardless of success or failure.
+      # Here, we can store the Terraform plan as an artifact.
+      epilogue:
+        always:
+          commands:
+            - artifact push job tfplan
+
+# The promotions block defines manual triggers for the next stage of the pipeline.
+promotions:
+  - name: "Apply to Production"
+    pipeline_file: apply.yml
+    # To automatically promote a passing push to main, uncomment the following:
+    # auto_promote:
+    #   when: "result = 'passed' and branch = 'main'"
