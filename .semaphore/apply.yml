@@ -19,8 +19,10 @@ blocks:
       prologue:
         commands:
           - checkout
+          # Decode the GCP key from the environment variable (defined in the Variable Group).
+          - echo $GCP_KEY_BASE64 | base64 --decode > /tmp/gcp-key.json
           # Authenticate with Google Cloud.
-          - gcloud auth activate-service-account --key-file=/home/semaphore/.secrets/gcp-key.json
+          - gcloud auth activate-service-account --key-file=/tmp/gcp-key.json
           # Download the plan from the previous pipeline's artifacts.
           - artifact pull workflow tfplan
 

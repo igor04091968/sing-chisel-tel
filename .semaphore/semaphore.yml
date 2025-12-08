@@ -36,10 +36,11 @@ blocks:
         # Here, we check out the code and authenticate with Google Cloud.
         commands:
           - checkout
-          # The gcp-credentials secret should contain a file with your GCP service account key.
-          # The following command authenticates with gcloud CLI.
-          # Make sure the file name in the secret matches 'gcp-key.json'.
-          - gcloud auth activate-service-account --key-file=/home/semaphore/.secrets/gcp-key.json
+          # The GCP_KEY_BASE64 environment variable is defined in the Variable Group.
+          # We decode it into a file that can be used by gcloud.
+          - echo $GCP_KEY_BASE64 | base64 --decode > /tmp/gcp-key.json
+          # Authenticate with gcloud CLI using the decoded key file.
+          - gcloud auth activate-service-account --key-file=/tmp/gcp-key.json
 
       jobs:
         - name: "terraform init & plan"
