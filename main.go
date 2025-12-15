@@ -40,6 +40,7 @@ func runApp() {
 }
 
 func main() {
+	// This is a test comment for Ansible playbook verification.
 	if len(os.Args) < 2 {
 		runApp()
 		return
