@@ -7,26 +7,21 @@ FROM golang:1.25-alpine AS backend-builder
 WORKDIR /app
 ARG TARGETARCH
 ENV CGO_ENABLED=1
-ENV CGO_CFLAGS="-D_LARGEFILE64_SOURCE"
 ENV GOARCH=$TARGETARCH
 
 RUN apk update && apk add --no-cache \
-    gcc \
-    musl-dev \
-    libc-dev \
     make \
     git \
     wget \
     unzip \
-    bash
-
-ENV CC=gcc
+    bash \
+    build-base
 
 COPY . .
 COPY --from=front-builder /app/dist/ /app/web/html/
 
 RUN go build -ldflags="-w -s" \
-    -tags "with_quic,with_grpc,with_utls,with_acme,with_gvisor" \
+    -tags "with_quic,with_grpc,with_utls,with_acme,with_gvisor,netgo" \
     -o sui main.go
 
 FROM --platform=$TARGETPLATFORM alpine

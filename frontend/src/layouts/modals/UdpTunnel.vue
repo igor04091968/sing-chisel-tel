@@ -2,7 +2,7 @@
   <v-dialog v-model="props.visible" max-width="600px">
     <v-card :title="isNew ? $t('actions.add') : $t('actions.edit')" rounded="lg">
       <v-card-text>
-        <v-text-field v-model="tunnel.Name" :label="$t('objects.name')" variant="outlined" />
+        <v-text-field v-model="tunnel.Name" label="Name" variant="outlined" />
         <v-select
           v-model="tunnel.Mode"
           :items="['faketcp', 'icmp', 'raw_udp']"
@@ -73,7 +73,12 @@ watch(() => props.visible, (newVal) => {
 
 const save = async () => {
   const action = isNew.value ? 'udp_tunnel_save' : 'udp_tunnel_update'
-  const msg = await HttpUtils.post(`api/${action}`, tunnel.value)
+  const options = {
+    headers: {
+      'Content-Type': 'application/json; charset=UTF-8'
+    }
+  }
+  const msg = await HttpUtils.post(`api/${action}`, tunnel.value, options)
   if (msg.success) {
     push.success({
       title: i18n.global.t('success'),
