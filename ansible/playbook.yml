@@ -1,0 +1,8 @@
+---
+- name: Check connection to servers
+  hosts: servers
+  gather_facts: no
+
+  tasks:
+    - name: Ping servers
+      ansible.builtin.ping:
