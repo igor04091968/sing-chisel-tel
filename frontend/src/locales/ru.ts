@@ -519,7 +519,7 @@ export default {
     p: "п",
     Kp: "Кп",
     Mp: "Мп",
-    Gb: "Гб",
+    Gp: "Гп",
     bps: "б/с",
     Kbps: "Кб/с",
     Mbps: "Мб/с",
